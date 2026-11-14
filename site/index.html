@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>docstor · HarmonyOS 文档镜像</title>
+<meta name="description" content="华为开发者文档中心镜像站（docstor）">
+<link rel="stylesheet" href="/assets/vendor/vue.css">
+<link rel="stylesheet" href="/assets/docstor.css?v=20261114n">
+</head>
+<body>
+<div id="app">加载中…</div>
+
+<script>
+window.$docsify = {
+  name: 'docstor <small>文档镜像</small>',
+  repo: '',
+  el: '#app',
+  basePath: '/docs/',
+  homepage: '_home.md',
+  loadSidebar: false,          /* 侧边栏由插件按 /api/tree 渲染（层级与官网一致） */
+  subMaxLevel: 0,              /* 只到页面级，不展开页内小章节 */
+  auto2top: true,
+  routerMode: 'hash',
+  maxLevel: 3,
+  executeScript: false,
+  noCompileLinks: [],
+  search: {
+    placeholder: '搜索文档…',
+    noData: '没有匹配结果',
+    depth: 3,
+    paths: 'auto'
+  }
+};
+</script>
+<!-- 先定义插件，docsify 启动时读取 $docsify.plugins -->
+<script src="/assets/docstor.js?v=20261114n"></script>
+<script src="/assets/vendor/docsify.min.js"></script>
+<script src="/assets/vendor/search.min.js"></script>
+</body>
+</html>

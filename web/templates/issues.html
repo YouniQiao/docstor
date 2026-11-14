@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>全量问题 · docstor</title>
+<style>
+  :root{--accent:#2f6fed;--accent-weak:#eaf1ff;--border:#e6e8eb;--muted:#6b7280;--danger:#d94a4a;--warn:#b3761f;--info:#57606a}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;color:#1f2430;background:#f7f8fa}
+  header{background:#fff;border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:10}
+  header h1{font-size:17px;margin:0}
+  header a{color:var(--muted);text-decoration:none;font-size:13px}
+  header a:hover{color:var(--accent)}
+  .wrap{max-width:1180px;margin:18px auto;padding:0 20px 60px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+  .card .n{font-size:22px;font-weight:700}
+  .card .l{color:var(--muted);font-size:12px;margin-top:2px}
+  .filters{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
+  select,input[type=text]{border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px;background:#fff;color:#1f2430}
+  input[type=text]{min-width:240px}
+  button{border:1px solid var(--border);background:#fff;border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer}
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);border-radius:10px;overflow:hidden;font-size:13px}
+  th,td{padding:9px 12px;border-bottom:1px solid #f0f1f3;text-align:left;vertical-align:top}
+  th{background:#fafbfc;color:#4b5563;font-weight:600;font-size:12px;white-space:nowrap}
+  tr:hover td{background:#fcfdff}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:5px;background:#f1f3f6;color:#4b5563;white-space:nowrap}
+  .sev-error{background:#fdeaea;color:var(--danger)}
+  .sev-warn{background:#fdf3e3;color:var(--warn)}
+  .sev-info{background:#eef1f6;color:var(--info)}
+  .doc a{color:var(--accent);text-decoration:none;font-weight:600}
+  .doc a:hover{text-decoration:underline}
+  .msg{color:#39414d;line-height:1.6;word-break:break-word}
+  .meta{color:var(--muted);font-size:11.5px;white-space:nowrap}
+  .pager{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:14px;color:var(--muted);font-size:13px}
+  .pager button[disabled]{opacity:.45;cursor:not-allowed}
+  .empty{text-align:center;color:var(--muted);padding:40px 0;background:#fff;border:1px solid var(--border);border-radius:10px}
+</style>
+</head>
+<body>
+<header>
+  <h1>全量问题</h1>
+  <a href="/">← 返回文档站</a>
+  <span style="flex:1"></span>
+  <span class="meta" id="stamp"></span>
+</header>
+
+<div class="wrap">
+  <div class="cards" id="cards"></div>
+
+  <div class="filters">
+    <select id="f-lang">
+      <option value="">全部语言</option>
+      <option value="cn">中文</option>
+      <option value="en">英文</option>
+    </select>
+    <select id="f-section"><option value="">全部板块</option></select>
+    <select id="f-rule"><option value="">全部类型</option></select>
+    <select id="f-status">
+      <option value="all">全部状态</option>
+      <option value="open">未解决</option>
+      <option value="resolved">已解决</option>
+    </select>
+    <input type="text" id="f-q" placeholder="搜索问题描述 / 文档">
+    <button id="f-apply">筛选</button>
+    <button id="f-reset">重置</button>
+    <span style="flex:1"></span>
+    <span class="meta" id="count"></span>
+  </div>
+
+  <div id="list"></div>
+  <div class="pager" id="pager"></div>
+</div>
+
+<script>
+const RULE_LABELS = {{ rule_labels|tojson }};
+const state = { page: 1, size: 50, total: 0, pages: 0 };
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+async function loadFacets(){
+  const d = await (await fetch('/api/facets')).json();
+  const total = d.langs.reduce((a,b)=>a+b.n,0);
+  document.getElementById('cards').innerHTML =
+    `<div class="card"><div class="n">${total}</div><div class="l">未解决问题总数</div></div>` +
+    d.rules.map(r=>`<div class="card" data-rule="${r.rule}" style="cursor:pointer"><div class="n">${r.n}</div><div class="l">${esc(r.label)}</div></div>`).join('');
+  document.querySelectorAll('#cards .card[data-rule]').forEach(c=>c.onclick=()=>{
+    document.getElementById('f-rule').value=c.dataset.rule; state.page=1; loadList();
+  });
+  const rs = document.getElementById('f-rule');
+  rs.innerHTML = '<option value="">全部类型</option>' + d.rules.map(r=>`<option value="${r.rule}">${esc(r.label)} (${r.n})</option>`).join('');
+  const ss = document.getElementById('f-section');
+  ss.innerHTML = '<option value="">全部板块</option>' + d.sections.map(s=>`<option value="${s.section}">${s.lang}/${esc(s.section)} (${s.n})</option>`).join('');
+}
+
+function query(){
+  const p = new URLSearchParams({page: state.page, size: state.size, status: document.getElementById('f-status').value});
+  const lang = document.getElementById('f-lang').value;
+  const sec = document.getElementById('f-section').value;
+  const rule = document.getElementById('f-rule').value;
+  const q = document.getElementById('f-q').value.trim();
+  if (lang) p.set('lang', lang);
+  if (sec) p.set('section', sec);
+  if (rule) p.set('rule', rule);
+  if (q) p.set('q', q);
+  return p.toString();
+}
+
+async function loadList(){
+  const d = await (await fetch('/api/issues?' + query())).json();
+  state.total = d.total; state.pages = d.pages;
+  document.getElementById('count').textContent = `共 ${d.total.toLocaleString()} 条`;
+  if (!d.items.length){ document.getElementById('list').innerHTML = '<div class="empty">没有匹配的问题</div>'; }
+  else {
+    document.getElementById('list').innerHTML = `<table><thead><tr>
+      <th style="width:88px">类型</th><th style="width:56px">级别</th><th>问题</th>
+      <th style="width:250px">文档</th><th style="width:110px">识别日期</th></tr></thead><tbody>` +
+      d.items.map(it=>{
+        const [lang,section,slug] = it.doc_key.split('/');
+        const frag = it.anchorId ? '#' + encodeURIComponent(it.anchorId) : '';
+        return `<tr>
+          <td><span class="tag">${esc(it.rule_label)}</span></td>
+          <td><span class="tag sev-${it.severity}">${it.severity==='error'?'错误':it.severity==='warn'?'警告':'提示'}</span></td>
+          <td class="msg">${esc(it.message)}${it.anchor_text?`<div class="meta">所属小节：${esc(it.anchor_text)}</div>`:''}</td>
+          <td class="doc"><a href="/#/${lang}/${section}/${slug}${frag}" target="_blank">${esc(slug)}</a>
+              <div class="meta">${lang}/${esc(section)}</div></td>
+          <td class="meta">${esc((it.first_seen||'').slice(0,10))}</td>
+        </tr>`;
+      }).join('') + '</tbody></table>';
+  }
+  renderPager();
+}
+
+function renderPager(){
+  const p = state.page, t = state.pages;
+  if (t <= 1){ document.getElementById('pager').innerHTML=''; return; }
+  const btn=(label,page,dis)=>`<button ${dis?'disabled':''} data-p="${page}">${label}</button>`;
+  const nums=[];
+  const from=Math.max(1,p-3), to=Math.min(t,p+3);
+  for(let i=from;i<=to;i++) nums.push(i===p?`<b>${i}</b>`:`<button data-p="${i}">${i}</button>`);
+  document.getElementById('pager').innerHTML =
+    `${btn('首页',1,p===1)}${btn('上一页',p-1,p===1)}${nums.join('')}${btn('下一页',p+1,p===t)}${btn('末页',t,p===t)}
+     <span>第 ${p}/${t} 页 · 每页 ${state.size} 条</span>`;
+  document.querySelectorAll('#pager button').forEach(b=>b.onclick=()=>{state.page=+b.dataset.p;loadList();window.scrollTo({top:0,behavior:'smooth'});});
+}
+
+document.getElementById('f-apply').onclick=()=>{state.page=1;loadList();};
+document.getElementById('f-reset').onclick=()=>{
+  document.getElementById('f-lang').value='';document.getElementById('f-section').value='';
+  document.getElementById('f-rule').value='';document.getElementById('f-status').value='all';
+  document.getElementById('f-q').value='';state.page=1;loadList();
+};
+document.getElementById('f-q').addEventListener('keydown',e=>{if(e.key==='Enter'){state.page=1;loadList();}});
+
+document.getElementById('stamp').textContent = '更新于 ' + new Date().toLocaleString('zh-CN');
+loadFacets().then(loadList);
+</script>
+</body>
+</html>

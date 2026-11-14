@@ -1,0 +1,28 @@
+# docstor 配置
+site:
+  title: "HarmonyOS 文档镜像"
+  # 站点生成目录（docsify 静态根）
+  output_dir: "site"
+  docs_dir: "site/docs"
+
+api:
+  base: "https://svc-drcn.developer.huawei.com/community/servlet/consumer/cn/documentPortal/"
+  center_prefix: "doccenter"
+  referer: "https://developer.huawei.com/consumer/cn/doc/"
+  user_agent: "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/120 Safari/537.36"
+  timeout: 40
+  retries: 3
+
+ingest:
+  workers: 6          # 文档级并发
+  request_delay: 0.05 # 每篇之间的间隔（秒）
+
+media:
+  gif_to_video: true
+  video_crf: 23
+  video_preset: "veryfast"
+  # GIF 小于此字节数不转码（小图转码不划算）
+  gif_min_bytes: 40960
+
+db:
+  path: "data/docstor.db"
