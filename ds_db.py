@@ -40,7 +40,9 @@ CREATE TABLE IF NOT EXISTS docs(
   is_api INTEGER DEFAULT 0, alias TEXT,
   md_path TEXT, content_hash TEXT, anchors_json TEXT,
   images INTEGER DEFAULT 0, videos INTEGER DEFAULT 0, bytes INTEGER DEFAULT 0,
-  fetched_at TEXT, status TEXT DEFAULT 'ok'
+  fetched_at TEXT, status TEXT DEFAULT 'ok',
+  updated_at TEXT,          -- 官网「更新时间」(北京时间)
+  url TEXT                  -- 官网原文地址
 );
 CREATE INDEX IF NOT EXISTS idx_docs_sec ON docs(lang, section);
 
@@ -71,6 +73,26 @@ CREATE TABLE IF NOT EXISTS runs(
 """
 
 
+# 板块 → 官网文档 URL 的路径段（浏览器逐板块核对：打开 /doc/<cat>/<slug> 比对 H1 与库中标题）
+SECTION_CAT = {
+    "capabilities": "harmonyos-guides",
+    "getting-started": "harmonyos-guides",
+    "deveco-studio": "harmonyos-guides",
+    "release-notes": "harmonyos-releases",
+    "tools-faq": "harmonyos-faqs",
+    "submission": "app",
+    "ux-design": "design-guides",
+    "advanced-features": "best-practices",
+    "industry-solutions": "architecture-guides",
+}
+
+
+def official_url(lang: str, section: str, slug: str, is_api: int = 0) -> str:
+    """拼接官网原文地址。API 参考统一在 harmonyos-references，其余按板块。"""
+    cat = "harmonyos-references" if is_api else SECTION_CAT.get(section, "harmonyos-guides")
+    return f"https://developer.huawei.com/consumer/{lang}/doc/{cat}/{slug}"
+
+
 def to_cst(s: str) -> str:
     """官网 displayUpdateTime 是 UTC 字符串，转成北京时间 'YYYY-MM-DD HH:mm'。"""
     from datetime import datetime, timedelta, timezone
@@ -98,6 +120,13 @@ class DB:
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
         self.conn.execute("PRAGMA journal_mode=WAL")
+        # 老库补列（CREATE TABLE IF NOT EXISTS 不会改已存在的表）
+        for tbl, col, typ in [("nodes", "alias", "TEXT"),
+                              ("docs", "updated_at", "TEXT"),
+                              ("docs", "url", "TEXT")]:
+            cols = [r[1] for r in self.conn.execute(f"PRAGMA table_info({tbl})")]
+            if col not in cols:
+                self.conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {typ}")
         self.conn.commit()
 
     # ---------- nodes ----------
@@ -132,16 +161,27 @@ class DB:
         self.conn.execute("UPDATE docs SET updated_at=? WHERE doc_key=?",
                           (to_cst(str(raw)), doc_key))
 
+    def set_url(self, doc_key: str, url: str) -> None:
+        if url:
+            self.conn.execute("UPDATE docs SET url=? WHERE doc_key=?", (url, doc_key))
+
     def export_meta(self, lang: str, section: str, out_dir) -> int:
-        """导出该板块 {slug: 更新时间} 供前端显示。"""
+        """导出该板块 {slug: {t: 更新时间, u: 官网原文地址}} 供前端显示。"""
         import json as _json
         from pathlib import Path as _Path
         rows = self.conn.execute(
-            "SELECT slug, updated_at FROM docs WHERE lang=? AND section=? AND updated_at IS NOT NULL",
+            "SELECT slug, updated_at, url FROM docs WHERE lang=? AND section=? AND status='ok'",
             (lang, section)).fetchall()
         if not rows:
             return 0
-        d = {r["slug"]: r["updated_at"] for r in rows}
+        d = {}
+        for r in rows:
+            item = {}
+            if r["updated_at"]:
+                item["t"] = r["updated_at"]
+            if r["url"]:
+                item["u"] = r["url"]
+            d[r["slug"]] = item
         p = _Path(out_dir) / "_meta.json"
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(_json.dumps(d, ensure_ascii=False), encoding="utf-8")

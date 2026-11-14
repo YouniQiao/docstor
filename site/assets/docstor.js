@@ -363,11 +363,34 @@
     if (old) old.remove();
     if (!state.slug) return;
     var h1 = document.querySelector('.markdown-section h1');
-    var t = (state.meta || {})[state.slug];
-    if (!h1 || !t) return;
+    var item = (state.meta || {})[state.slug];
+    if (!h1 || !item) return;
+    var t = typeof item === 'string' ? item : (item.t || '');
+    var u = typeof item === 'object' && item ? item.u : '';
+    if (!t && !u) return;
     var el = document.createElement('div');
     el.className = 'ds-updated';
-    el.textContent = '更新时间：' + t;
+    if (t) {
+      var span = document.createElement('span');
+      span.textContent = '更新时间：' + t;
+      el.appendChild(span);
+    }
+    if (u) {
+      if (t) {
+        var dot = document.createElement('span');
+        dot.className = 'ds-updated-sep';
+        dot.textContent = '·';
+        el.appendChild(dot);
+      }
+      var a = document.createElement('a');
+      a.className = 'ds-src-link';
+      a.href = u;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.textContent = '原文链接 ↗';
+      a.title = '在官网打开：' + u;
+      el.appendChild(a);
+    }
     h1.insertAdjacentElement('afterend', el);
   }
 

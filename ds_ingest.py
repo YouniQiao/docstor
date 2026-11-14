@@ -229,6 +229,7 @@ def ingest(args) -> int:
                     "fetched_at": ds_db.now(), "status": "ok",
                 })
                 db.set_updated(doc_key, r.get("updated"))
+                db.set_url(doc_key, ds_db.official_url(lang, section, r["slug"], int(bool(r["is_api"]))))
                 if r["failed_imgs"]:
                     log(f"   ⚠ {r['slug']}: {r['failed_imgs']} 张图下载失败")
             else:
