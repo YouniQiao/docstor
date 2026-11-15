@@ -32,6 +32,19 @@
   .sev-info{background:#eef1f6;color:var(--info)}
   .doc a{color:var(--accent);text-decoration:none;font-weight:600}
   .doc a:hover{text-decoration:underline}
+  #list table{table-layout:fixed;width:100%;min-width:900px}
+  #list td.msg{overflow-wrap:anywhere}
+  .msg-extra{margin-top:6px}
+  .msg-extra .issue-link{color:var(--accent);text-decoration:none;overflow-wrap:anywhere}
+  .msg-extra .issue-link:hover{text-decoration:underline}
+  #f-kit{min-width:180px;max-width:220px}
+  #f-kit:disabled{background:#f7f8fa;color:#9aa3b2}
+  #f-sub option.zero{color:#9aa3b2}
+  #f-sub:disabled{color:#9aa3b2}
+  .thumb{max-height:72px;max-width:170px;border:1px solid var(--border);border-radius:4px;vertical-align:middle;background:#fff}
+  .off{min-width:80px;max-width:80px}
+  .off a{color:var(--accent);text-decoration:none}
+  .off a:hover{text-decoration:underline}
   .msg{color:#39414d;line-height:1.6;word-break:break-word}
   .meta{color:var(--muted);font-size:11.5px;white-space:nowrap}
   .pager{display:flex;justify-content:center;align-items:center;gap:8px;margin-top:14px;color:var(--muted);font-size:13px}
@@ -57,6 +70,14 @@
       <option value="en">英文</option>
     </select>
     <select id="f-section"><option value="">全部板块</option></select>
+    <select id="f-sub" disabled title="先选板块"><option value="">全部细分</option></select>
+    <input type="text" id="f-kit" list="kit-list" placeholder="全部 Kit" autocomplete="off" disabled>
+    <datalist id="kit-list"></datalist>
+    <select id="f-kind" disabled title="仅「指南与API参考」可用">
+      <option value="">指南+API参考</option>
+      <option value="guide">仅指南</option>
+      <option value="api">仅 API 参考</option>
+    </select>
     <select id="f-rule"><option value="">全部类型</option></select>
     <select id="f-status">
       <option value="all">全部状态</option>
@@ -78,6 +99,25 @@
 const RULE_LABELS = {{ rule_labels|tojson }};
 const state = { page: 1, size: 50, total: 0, pages: 0 };
 
+// 链接类问题：把链接文字做成超链接；图片类问题：直接显示图片
+function shortMsg(s){ s = String(s||''); return s.length>110 ? s.slice(0,110)+'…' : s; }
+function locOf(it){ try { return JSON.parse(it.locator||'{}'); } catch(e){ return {}; } }
+function extraOf(it, lang, section){
+  const L = locOf(it), rule = it.rule||'';
+  if (rule.indexOf('link.') === 0){
+    const t = L.target || L.url || '';
+    if (!t) return '';
+    const href = /^https?:/i.test(t) ? t : (location.origin + '/#' + t);
+    const text = L.anchor_text || t;
+    return `<div class="msg-extra"><a class="issue-link" href="${esc(href)}" target="_blank" rel="noopener" title="${esc(t)}">${esc(text)}</a></div>`;
+  }
+  if (rule.indexOf('image.') === 0 && L.image){
+    const src = '/docs/' + lang + '/' + section + '/' + String(L.image).replace(/^\/+/, '');
+    return `<div class="msg-extra"><a href="${esc(src)}" target="_blank" rel="noopener"><img class="thumb" src="${esc(src)}" alt="问题图片" loading="lazy"></a></div>`;
+  }
+  return '';
+}
+
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
 
 async function loadFacets(){
@@ -90,20 +130,78 @@ async function loadFacets(){
     document.getElementById('f-rule').value=c.dataset.rule; state.page=1; loadList();
   });
   const rs = document.getElementById('f-rule');
-  rs.innerHTML = '<option value="">全部类型</option>' + d.rules.map(r=>`<option value="${r.rule}">${esc(r.label)} (${r.n})</option>`).join('');
+  rs.innerHTML = '<option value="">全部类型</option>' + d.rules.map(r=>`<option value="${r.rule}">${esc(r.label)} (${r.n_all})</option>`).join('');
   const ss = document.getElementById('f-section');
-  ss.innerHTML = '<option value="">全部板块</option>' + d.sections.map(s=>`<option value="${s.section}">${s.lang}/${esc(s.section)} (${s.n})</option>`).join('');
-}
+  ss.innerHTML = '<option value="">全部板块</option>' + d.sections.map(s=>`<option value="${s.section}">${esc(s.name)}（${s.n.toLocaleString()}）</option>`).join('');
+  state.facets = d;
+  fillSubs();
+  }
+
+  // 二级：其它板块 = 侧边栏一级目录；「指南与API参考」= 领域（应用框架/系统/媒体…）
+  function fillSubs(){
+    const sec = document.getElementById('f-section').value;
+    const lang = document.getElementById('f-lang').value;
+    const sel = document.getElementById('f-sub');
+    const old = sel.value;
+    const f = state.facets || {};
+    const list = (sec === 'capabilities' ? (f.domains || []) : (f.subs || []))
+      .filter(s => s.section === sec && (!lang || s.lang === lang));
+    const dup = {};
+    list.forEach(s => { dup[s.name] = (dup[s.name] || 0) + 1; });
+    sel.innerHTML = `<option value="">${sec === 'capabilities' ? '全部领域' : '全部细分'}</option>` +
+      list.map(s => {
+        const v = `${s.lang}|${s.section}|${s.name}`;
+        const label = dup[s.name] > 1 ? `${s.name}（${s.lang === 'en' ? '英文站' : '中文站'}）` : s.name;
+        return `<option value="${esc(v)}"${s.n_all === 0 ? ' class="zero"' : ''}>${esc(label)}（${s.n_all.toLocaleString()}）</option>`;
+      }).join('');
+    sel.disabled = !sec || !list.length;
+    sel.title = sel.disabled ? '先选板块（该板块无需细分）'
+      : (sec === 'capabilities' ? '按侧边栏二级目录（领域）筛选' : '按侧边栏一级目录筛选');
+    if (old && list.some(s => `${s.lang}|${s.section}|${s.name}` === old)) sel.value = old;
+    fillKits();
+  }
+
+  // 三级：Kit（仅「指南与API参考」，选中领域后可用），可输入过滤
+  function fillKits(){
+    const sec = document.getElementById('f-section').value;
+    const lang = document.getElementById('f-lang').value;
+    const dom = document.getElementById('f-sub').value;
+    const inp = document.getElementById('f-kit');
+    const dl = document.getElementById('kit-list');
+    const kind = document.getElementById('f-kind');
+    const on = sec === 'capabilities';
+    kind.disabled = !on;
+    state.kitMap = {};
+    if (!on) { inp.value = ''; inp.disabled = true; inp.placeholder = '全部 Kit'; dl.innerHTML = ''; return; }
+    const domName = dom ? dom.split('|')[2] : '';
+    const kits = (state.facets && state.facets.kits || [])
+      .filter(k => k.section === sec && (!lang || k.lang === lang) && (!domName || k.domain === domName))
+      .sort((a, b) => b.n_all - a.n_all || a.name.localeCompare(b.name));
+    dl.innerHTML = kits.map(k => {
+      state.kitMap[k.name] = `${k.lang}|${k.section}|${k.name}`;
+      return `<option value="${esc(k.name)}">${esc(k.name)}（${k.n_all.toLocaleString()}）</option>`;
+    }).join('');
+    inp.disabled = !domName || !kits.length;
+    inp.value = '';
+    inp.placeholder = !domName ? '先选领域' : `全部 ${domName} Kit`;
+  }
 
 function query(){
   const p = new URLSearchParams({page: state.page, size: state.size, status: document.getElementById('f-status').value});
   const lang = document.getElementById('f-lang').value;
   const sec = document.getElementById('f-section').value;
   const rule = document.getElementById('f-rule').value;
+  const sub = document.getElementById('f-sub').value;
+  const kitName = document.getElementById('f-kit').value.trim();
+  const kind = document.getElementById('f-kind').value;
   const q = document.getElementById('f-q').value.trim();
   if (lang) p.set('lang', lang);
   if (sec) p.set('section', sec);
   if (rule) p.set('rule', rule);
+  if (sub) p.set(sec === 'capabilities' ? 'domain' : 'sub', sub);
+  const kitVal = kitName && state.kitMap ? state.kitMap[kitName] : '';
+  if (kitVal) p.set('kit', kitVal);
+  if (kind) p.set('kind', kind);
   if (q) p.set('q', q);
   return p.toString();
 }
@@ -115,17 +213,19 @@ async function loadList(){
   if (!d.items.length){ document.getElementById('list').innerHTML = '<div class="empty">没有匹配的问题</div>'; }
   else {
     document.getElementById('list').innerHTML = `<table><thead><tr>
-      <th style="width:88px">类型</th><th style="width:56px">级别</th><th>问题</th>
-      <th style="width:250px">文档</th><th style="width:110px">识别日期</th></tr></thead><tbody>` +
+      <th style="width:88px">类型</th><th>问题</th>
+      <th style="width:80px">文档</th><th style="width:80px">官网</th><th style="width:105px">识别日期</th></tr></thead><tbody>` +
       d.items.map(it=>{
         const [lang,section,slug] = it.doc_key.split('/');
         const frag = it.anchorId ? '#' + encodeURIComponent(it.anchorId) : '';
         return `<tr>
           <td><span class="tag">${esc(it.rule_label)}</span></td>
-          <td><span class="tag sev-${it.severity}">${it.severity==='error'?'错误':it.severity==='warn'?'警告':'提示'}</span></td>
-          <td class="msg">${esc(it.message)}${it.anchor_text?`<div class="meta">所属小节：${esc(it.anchor_text)}</div>`:''}</td>
-          <td class="doc"><a href="/#/${lang}/${section}/${slug}${frag}" target="_blank">${esc(slug)}</a>
-              <div class="meta">${lang}/${esc(section)}</div></td>
+          <td class="msg">${esc(shortMsg(it.message))}${extraOf(it, lang, section)}</td>
+          <td class="doc"><a href="/#/${lang}/${section}/${slug}${frag}" target="_blank" rel="noopener"
+                 title="${esc(lang + '/' + section + '/' + slug)}">链接</a></td>
+          <td class="off">${it.official_url
+              ? `<a href="${esc(it.official_url)}" target="_blank" rel="noopener noreferrer" title="${esc(it.official_url)}">链接</a>`
+              : '<span class="meta">—</span>'}</td>
           <td class="meta">${esc((it.first_seen||'').slice(0,10))}</td>
         </tr>`;
       }).join('') + '</tbody></table>';
@@ -146,9 +246,21 @@ function renderPager(){
   document.querySelectorAll('#pager button').forEach(b=>b.onclick=()=>{state.page=+b.dataset.p;loadList();window.scrollTo({top:0,behavior:'smooth'});});
 }
 
+['f-section','f-lang'].forEach(id => document.getElementById(id)
+  .addEventListener('change', () => { document.getElementById('f-sub').value=''; fillSubs(); }));
+document.getElementById('f-sub').addEventListener('change', () => {
+  fillKits();
+  if (document.getElementById('f-sub').value) document.getElementById('f-kit').value = '';
+});
+// 输入不在候选里的 Kit 就清空，避免带着无效值去筛
+document.getElementById('f-kit').addEventListener('change', function(){
+  if (this.value && !(state.kitMap || {})[this.value]) this.value = '';
+});
 document.getElementById('f-apply').onclick=()=>{state.page=1;loadList();};
 document.getElementById('f-reset').onclick=()=>{
   document.getElementById('f-lang').value='';document.getElementById('f-section').value='';
+  fillSubs(); document.getElementById('f-sub').value=''; fillKits();
+  document.getElementById('f-kind').value='';
   document.getElementById('f-rule').value='';document.getElementById('f-status').value='all';
   document.getElementById('f-q').value='';state.page=1;loadList();
 };
@@ -160,7 +272,14 @@ function applyQuery(){
   const q = new URLSearchParams(location.search);
   const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
   set('f-lang', q.get('lang')); set('f-rule', q.get('rule'));
-  set('f-section', q.get('section')); set('f-q', q.get('q')); set('f-status', q.get('status'));
+  set('f-section', q.get('section')); fillSubs();
+  if (q.get('domain')) document.getElementById('f-sub').value = q.get('domain');
+  else set('f-sub', q.get('sub'));
+  fillKits();
+  const kitQ = q.get('kit');
+  if (kitQ) { const nm = kitQ.split('|')[2]; if ((state.kitMap || {})[nm]) document.getElementById('f-kit').value = nm; }
+  set('f-kind', q.get('kind'));
+  set('f-q', q.get('q')); set('f-status', q.get('status'));
 }
 
 document.getElementById('stamp').textContent = '更新于 ' + new Date().toLocaleString('zh-CN');
