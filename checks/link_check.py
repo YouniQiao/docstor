@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import time
 from pathlib import Path
@@ -91,9 +92,34 @@ def _anchor_exists(ctx, lang: str, section: str, slug: str, anchor: str) -> bool
     return anchor in idx.get(slug, set())
 
 
+_OFFICIAL = None
+
+
+def _official():
+    """官网存在性判定器，按进程各持一份（ds_check 是多线程/多进程跑的）。"""
+    global _OFFICIAL
+    pid = os.getpid()
+    if _OFFICIAL and _OFFICIAL[0] == pid:
+        return _OFFICIAL[1]
+    try:
+        from ds_official import Official
+        obj = Official()
+    except Exception:  # noqa: BLE001
+        obj = None
+    _OFFICIAL = (pid, obj)
+    return obj
+
+
 @register("link.dead", label="链接失效")
 def check_dead(doc, ctx):
+    """站内链接是否指向官网不存在的文档。
+
+    口径：**问官网**（内容接口 + 中文 sitemap），不看本地镜像有没有这篇。
+    官网也查不到 = 真死链；官网有、本地没镜像 = 镜像缺口（link.mirror_missing）；
+    英文页链到只有中文版的文档 = 英文缺译（link.no_translation）。
+    """
     out = []
+    seen = set()
     for line_no, target, _html in iter_links(ctx.text):
         if not target or target.startswith(("#", "mailto:", "javascript:")):
             continue
@@ -102,22 +128,105 @@ def check_dead(doc, ctx):
             lang, section, slug, _frag = m.groups()
             if not _section_ready(ctx, lang, section):
                 continue
-            if not _target_exists(ctx, lang, section, slug):
-                title, aid = ctx.anchor_for_line(line_no)
-                out.append(Issue("link.dead", f"站内链接指向不存在的文档：{target}",
-                                 locator={"line": line_no, "target": target, "anchorId": aid},
-                                 anchor_text=title, evidence={"target": target}))
-        elif target.startswith(("http://", "https://")):
-            if not getattr(ctx, "external", False):
+            key = (lang, section, slug)
+            if key in seen:      # 同篇同一目标（含不同锚点）只报一次
                 continue
-            st = ctx.check_url(target)
-            if st in (404, 410) or st == 0:
-                title, aid = ctx.anchor_for_line(line_no)
-                out.append(Issue("link.dead", f"外链失效（HTTP {st or '不可达'}）：{target}",
-                                 severity="error",
-                                 locator={"line": line_no, "target": target, "anchorId": aid},
-                                 anchor_text=title, evidence={"target": target, "status": st}))
+            seen.add(key)
+            if _target_exists(ctx, lang, section, slug):
+                continue          # 镜像里有 = 官网肯定有，不必打接口（省 6 万次调用）
+            off = _official()
+            verdict = off.verdict(lang, section, slug) if off else None
+            title, aid = ctx.anchor_for_line(line_no)
+            loc = {"line": line_no, "target": target, "anchorId": aid}
+            if verdict == "ok":
+                if not _target_exists(ctx, lang, section, slug):
+                    out.append(Issue("link.mirror_missing",
+                                     f"官网有这篇但镜像里没有：{target}",
+                                     severity="info", locator=loc, anchor_text=title,
+                                     evidence={"target": target, "verdict": verdict}))
+                continue
+            if verdict == "published":
+                out.append(Issue("link.mirror_missing",
+                                 f"官网已发布但镜像里没有（不在目录树）：{target}",
+                                 severity="info", locator=loc, anchor_text=title,
+                                 evidence={"target": target, "verdict": verdict}))
+                continue
+            if verdict == "moved":
+                new = off.detail(lang, section, slug) if off else ""
+                out.append(Issue("link.moved",
+                                 f"官网页面已是迁移公告，建议改为：{new or '（原页面指向的新地址）'}",
+                                 severity="warn", locator=loc, anchor_text=title,
+                                 evidence={"target": target, "verdict": verdict, "suggestion": new}))
+                continue
+            if verdict == "cn_only":
+                out.append(Issue("link.no_translation",
+                                 f"英文页链到只有中文版的文档：{target}",
+                                 severity="warn", locator=loc, anchor_text=title,
+                                 evidence={"target": target, "verdict": verdict}))
+                continue
+            out.append(Issue("link.dead",
+                             f"官网查不到该文档（链接已失效）：{target}",
+                             locator=loc, anchor_text=title,
+                             evidence={"target": target, "verdict": verdict or "unknown"}))
     return out
+
+
+IMG_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp")
+
+
+@register("link.external", label="外链失效")
+def check_external(doc, ctx):
+    """正文里的第三方 http(s) 链接：404/410 报失效，403/超时只报不可达。"""
+    import ds_http
+
+    out = []
+    seen = set()
+    for line_no, target, _html in iter_links(ctx.text):
+        if not target or not target.startswith(("http://", "https://")):
+            continue
+        if target.split("#")[0].lower().endswith(IMG_EXT):
+            continue
+        url = target.split("#")[0]
+        if url in seen:                     # 同篇同链接只报一次
+            continue
+        seen.add(url)
+        try:
+            st, _final, err = ds_http.status(url)
+        except Exception:  # noqa: BLE001
+            continue
+        v = ds_http.verdict(st, err)
+        if v == "ok":
+            continue
+        title, aid = ctx.anchor_for_line(line_no)
+        loc = {"line": line_no, "target": target, "anchorId": aid}
+        if v == "dead":
+            out.append(Issue("link.external", f"外链失效（HTTP {st}）：{url}",
+                             severity="error", locator=loc, anchor_text=title,
+                             evidence={"target": url, "status": st}))
+        else:
+            out.append(Issue("link.external",
+                             f"外链打不开（{err or ('HTTP ' + str(st))}，可能是反爬/临时故障）：{url}",
+                             severity="info", locator=loc, anchor_text=title,
+                             evidence={"target": url, "status": st, "err": err}))
+    return out
+
+
+@register("link.moved", label="链接已迁移")
+def check_link_moved(doc, ctx):
+    """占位：官网页面已是「内容已迁移」公告，由 check_dead 产出。"""
+    return []
+
+
+@register("link.mirror_missing", label="镜像缺这篇")
+def check_mirror_missing(doc, ctx):
+    """占位：结论由 check_dead 统一产出，这里只登记标签/严重级。"""
+    return []
+
+
+@register("link.no_translation", label="英文缺译", langs=("en",))
+def check_no_translation(doc, ctx):
+    """占位：英文页链到只有中文版的文档，由 check_dead 产出。"""
+    return []
 
 
 @register("link.anchor", label="锚点失效")

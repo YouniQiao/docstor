@@ -33,6 +33,9 @@
     // #/cn/capabilities/abilitykit-overview
     var h = decodeURI(location.hash.replace(/^#\/?/, ''));
     var parts = h.split('/').filter(Boolean);
+    // 从问题页点进来时地址是 #/cn/sec/slug#anchor，docsify 会把它规整成
+    // ...slug?id=anchor —— 末尾的 ?id= / #anchor 不是 slug 的一部分
+    if (parts.length) parts[parts.length - 1] = parts[parts.length - 1].split('?')[0].split('#')[0];
     state.lang = parts[0] || 'cn';
     state.section = parts[1] || '';
     state.slug = (parts[2] || '').replace(/\.md$/, '');
@@ -165,7 +168,7 @@
     var home = document.createElement('li');
     home.className = 'ds-home';
     var ha = document.createElement('a');
-    ha.href = '#/';
+    ha.href = '#/' + (state.lang === 'en' ? 'en' : 'cn');
     ha.textContent = state.lang === 'en' ? 'Developer Docs Center' : '开发者文档中心';
     home.appendChild(ha);
     ul.appendChild(home);
