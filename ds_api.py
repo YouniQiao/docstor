@@ -157,8 +157,11 @@ class DocCenter:
                 # catalogTreeList 是权威结构；children 是它的降级副本（无 nodeId、名称可能滞后），
                 # 两者拼接会造成同名节点重复（如「更多版本」「变更预告」各出现两次）
                 kids = (n.get("catalogTreeList") or n.get("children") or [])
-                # 「API参考」这一支下的文档都按 API 文档取
-                walk(kids, node, depth + 1, is_api or name == "API参考", node_alias)
+                # 「API参考」这一支下的文档都按 API 文档取（英文站叫 "API references"，
+                # alias 同为 references；只认中文名会让英文 API 文档全部 92531031）
+                is_api_child = (is_api or name in ("API参考", "API references")
+                                or node_alias == "references")
+                walk(kids, node, depth + 1, is_api_child, node_alias)
 
         walk(value.get("centerNodeList") or [], root, 1, False, alias)
         return root

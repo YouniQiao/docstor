@@ -170,6 +170,14 @@ SECTION_NAMES = {
     "advanced-features": "最佳实践", "industry-solutions": "行业解决方案",
 }
 
+# 英文站 8 个板块（无行业解决方案）
+SECTION_NAMES_EN = {
+    "release-notes": "Release Notes", "deveco-studio": "Tools", "ux-design": "Design",
+    "capabilities": "Guides & API References", "getting-started": "Develop & Test",
+    "submission": "Publish & Distribute", "tools-faq": "Support & FAQ",
+    "advanced-features": "Best Practices",
+}
+
 _TREE_CACHE: dict = {}
 
 
@@ -209,7 +217,8 @@ def api_tree():
             continue
         # 每个板块可能有多个根节点（如「指南」「API参考」），用一个虚拟板块节点包起来
         sec_nodes = [build(k, 1) for k in top]
-        sections.append({"k": sec, "n": SECTION_NAMES.get(sec, sec),
+        names = SECTION_NAMES_EN if lang == "en" else SECTION_NAMES
+        sections.append({"k": sec, "n": names.get(sec, sec),
                          "c": sec_nodes if len(sec_nodes) > 1 else (sec_nodes[0].get("c") or sec_nodes)})
 
     issues = {}

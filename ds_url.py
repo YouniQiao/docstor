@@ -45,11 +45,7 @@ def url_for(lang: str, cat: str, slug: str) -> str:
     return DOC_URL.format(lang=lang, cat=cat, slug=slug)
 
 
-def fetch_sitemap(lang: str, cache_dir, ttl: int = 7 * 86400) -> str:
-    """取官网文档 sitemap（多分片拼起来），本地缓存 ttl 秒。"""
-    p = Path(cache_dir) / f"sitemap_doc_{lang}.xml"
-    if p.exists() and time.time() - p.stat().st_mtime < ttl:
-        return p.read_text(encoding="utf-8", errors="ignore")
+def _download(lang: str) -> str:
     text = ""
     for n in range(1, 6):
         req = urllib.request.Request(SITEMAP_TPL.format(lang=lang, n=n),
@@ -61,6 +57,23 @@ def fetch_sitemap(lang: str, cache_dir, ttl: int = 7 * 86400) -> str:
         if "<loc>" not in body:
             break
         text += body
+    return text
+
+
+def fetch_sitemap(lang: str, cache_dir, ttl: int = 7 * 86400) -> str:
+    """取官网文档 sitemap（多分片拼起来），本地缓存 ttl 秒。
+
+    英文站没有自己的 sitemap（/consumer/en/sitemap/doc/... 返回 404），
+    而中英文同一篇文档的 slug 相同、发布目录也相同 —— 直接复用中文 sitemap 做锚点。
+    """
+    p = Path(cache_dir) / f"sitemap_doc_{lang}.xml"
+    if p.exists() and time.time() - p.stat().st_mtime < ttl:
+        return p.read_text(encoding="utf-8", errors="ignore")
+    text = _download(lang)
+    if not text and lang != "cn":
+        text = fetch_sitemap("cn", cache_dir, ttl)      # 回退到中文 sitemap
+        if text:
+            return text
     if text:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text, encoding="utf-8")

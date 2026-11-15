@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>全量问题 · docstor</title>
+<title>全量问题 · 鸿蒙开发者文档</title>
 <style>
   :root{--accent:#2f6fed;--accent-weak:#eaf1ff;--border:#e6e8eb;--muted:#6b7280;--danger:#d94a4a;--warn:#b3761f;--info:#57606a}
   *{box-sizing:border-box}
@@ -154,8 +154,17 @@ document.getElementById('f-reset').onclick=()=>{
 };
 document.getElementById('f-q').addEventListener('keydown',e=>{if(e.key==='Enter'){state.page=1;loadList();}});
 
+// 支持 /issues?lang=en&rule=... 直达（英文页顶栏「All issues」会带 lang 参数）。
+// 必须等 loadFacets() 把「板块 / 类型」两个下拉填充完再回填，否则设了值也会被重建的 option 冲掉。
+function applyQuery(){
+  const q = new URLSearchParams(location.search);
+  const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
+  set('f-lang', q.get('lang')); set('f-rule', q.get('rule'));
+  set('f-section', q.get('section')); set('f-q', q.get('q')); set('f-status', q.get('status'));
+}
+
 document.getElementById('stamp').textContent = '更新于 ' + new Date().toLocaleString('zh-CN');
-loadFacets().then(loadList);
+loadFacets().then(applyQuery).then(loadList);
 </script>
 </body>
 </html>

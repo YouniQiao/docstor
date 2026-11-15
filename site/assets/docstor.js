@@ -166,7 +166,7 @@
     home.className = 'ds-home';
     var ha = document.createElement('a');
     ha.href = '#/';
-    ha.textContent = '开发者文档中心';
+    ha.textContent = state.lang === 'en' ? 'Developer Docs Center' : '开发者文档中心';
     home.appendChild(ha);
     ul.appendChild(home);
 
@@ -269,7 +269,14 @@
     }
   }
 
+  function updateBrand() {
+    var h1 = document.querySelector('.sidebar > h1, .sidebar .app-name');
+    if (h1) h1.textContent = state.lang === 'en' ? 'HarmonyOS Developers' : '鸿蒙开发者';
+    if (state.lang === 'en') document.title = 'HarmonyOS Developer Documentation';
+  }
+
   function sidebarNow() {
+    updateBrand();
     if (!state.tree) return;
     renderSidebar();
     revealPath();
@@ -483,25 +490,56 @@
     if (document.querySelector('.ds-topbar')) return;
     var bar = document.createElement('div');
     bar.className = 'ds-topbar';
-    var label = state.lang === 'cn' ? 'EN' : '中文';
+    // 文案全部交给 updateTopbar() 按当前语言刷新，这里只搭骨架
     bar.innerHTML =
-      '<button class="ds-btn" id="ds-lang">' + label + '</button>' +
+      '<button class="ds-btn" id="ds-lang">EN</button>' +
       '<button class="ds-btn primary" id="ds-issues-btn">本页问题 <b>0</b></button>' +
       '<a class="ds-btn primary" id="ds-all-issues" href="/issues">全量问题</a>';
     document.body.appendChild(bar);
 
-    document.getElementById('ds-lang').onclick = function () {
-      if (!state.slug) return;
-      location.hash = '#/' + (state.lang === 'cn' ? 'en' : 'cn') + '/' + state.section + '/' + state.slug;
-    };
+    document.getElementById('ds-lang').onclick = switchLang;
     document.getElementById('ds-issues-btn').onclick = function () { togglePanel(true); };
   }
 
+  /* 中英切换：优先跳同篇文档的另一语言版本，该篇没有对应语言就回该语言首页 */
+  function switchLang() {
+    parseRoute();          // 404 页不会触发 doneEach，state 可能是上一页的，先按地址栏重算
+    var to = state.lang === 'en' ? 'cn' : 'en';
+    if (!state.slug) { location.hash = '#/' + to; return; }   // 首页直接换首页
+    var target = '/docs/' + to + '/' + state.section + '/' + state.slug + '.md';
+    fetch(target, { method: 'HEAD' })
+      .then(function (r) {
+        location.hash = r.ok ? '#/' + to + '/' + state.section + '/' + state.slug
+                             : '#/' + to;
+      })
+      .catch(function () { location.hash = '#/' + to; });
+  }
+
   function updateTopbar() {
-    var btn = document.querySelector('#ds-issues-btn');
-    var b = btn && btn.querySelector('b');
-    if (b) b.textContent = issuesOf(state.section, state.slug);
-    if (btn) btn.style.display = state.slug ? '' : 'none';   // 首页没有“本页”
+    var en = state.lang === 'en';
+
+    var lb = document.getElementById('ds-lang');
+    if (lb) {
+      lb.textContent = en ? '中文' : 'EN';
+      lb.title = en ? '切换到中文' : 'Switch to English';
+    }
+
+    var btn = document.getElementById('ds-issues-btn');
+    if (btn) {
+      btn.innerHTML = (en ? 'Page issues' : '本页问题') + ' <b>' + issuesOf(state.section, state.slug) + '</b>';
+      btn.style.display = state.slug ? '' : 'none';          // 首页没有“本页”
+    }
+
+    var all = document.getElementById('ds-all-issues');
+    if (all) {
+      all.textContent = en ? 'All issues' : '全量问题';
+      all.href = '/issues' + (en ? '?lang=en' : '');         // 英文页跳到只看英文的问题
+    }
+
+    var ph = document.querySelector('.ds-panel-head h3');
+    if (ph) ph.textContent = en ? 'Page issues' : '本页问题';
+    var cl = document.getElementById('ds-close');
+    if (cl) cl.textContent = en ? 'Close' : '关闭';
   }
 
   /* ---------- 右侧问题面板 ---------- */

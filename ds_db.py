@@ -229,13 +229,20 @@ class DB:
             "SELECT fprint FROM issues WHERE doc_key=? AND status='open'", (doc_key,))
         return {r["fprint"] for r in cur.fetchall()}
 
-    def resolve_missing(self, doc_key: str, keep: set[str], run_id: int | None = None) -> int:
-        """文档复检后，把本次未再出现的问题标记已解决。"""
+    def resolve_missing(self, doc_key: str, keep: set[str], run_id: int | None = None,
+                        rules: set[str] | None = None) -> int:
+        """文档复检后，把本次未再出现的问题标记已解决。
+
+        rules 非空时只处理这些规则的旧问题 —— 用 `--rules` 跑单类检查时，
+        不能把其它规则的历史问题误判为「已解决」（曾把 en 的 723 条链接问题全标 resolved）。
+        """
         rows = self.conn.execute(
-            "SELECT id, fprint FROM issues WHERE doc_key=? AND status='open'", (doc_key,)
+            "SELECT id, fprint, rule FROM issues WHERE doc_key=? AND status='open'", (doc_key,)
         ).fetchall()
         n = 0
         for r in rows:
+            if rules and r["rule"] not in rules:
+                continue
             if r["fprint"] not in keep:
                 self.conn.execute(
                     "UPDATE issues SET status='resolved', resolved_at=?, run_id=? WHERE id=?",

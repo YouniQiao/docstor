@@ -3,21 +3,25 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>docstor · HarmonyOS 文档镜像</title>
-<meta name="description" content="华为开发者文档中心镜像站（docstor）">
+<title>鸿蒙开发者文档</title>
+<meta name="description" content="鸿蒙开发者文档">
 <link rel="stylesheet" href="/assets/vendor/vue.css">
-<link rel="stylesheet" href="/assets/docstor.css?v=20261114p">
+<link rel="stylesheet" href="/assets/docstor.css?v=20261115b">
 </head>
 <body>
 <div id="app">加载中…</div>
 
 <script>
+/* 按 hash 里的语言选首页与站名（#/en/... 打开时用英文首页） */
+var __m0 = (location.hash || '').match(/^#\/(cn|en)(?:\/|$)/);
+var __lang0 = __m0 && __m0[1] === 'en' ? 'en' : 'cn';
+
 window.$docsify = {
-  name: 'docstor <small>文档镜像</small>',
+  name: __lang0 === 'en' ? 'HarmonyOS Developers' : '鸿蒙开发者',
   repo: '',
   el: '#app',
   basePath: '/docs/',
-  homepage: '_home.md',
+  homepage: __lang0 === 'en' ? '_home_en.md' : '_home.md',
   loadSidebar: false,          /* 侧边栏由插件按 /api/tree 渲染（层级与官网一致） */
   subMaxLevel: 0,              /* 只到页面级，不展开页内小章节 */
   auto2top: true,
@@ -34,7 +38,7 @@ window.$docsify = {
 };
 </script>
 <!-- 先定义插件，docsify 启动时读取 $docsify.plugins -->
-<script src="/assets/docstor.js?v=20261114p"></script>
+<script src="/assets/docstor.js?v=20261115b"></script>
 <script src="/assets/vendor/docsify.min.js"></script>
 <script src="/assets/vendor/search.min.js"></script>
 </body>

@@ -136,7 +136,8 @@ def run(args) -> int:
                 by_rule[it.rule] = by_rule.get(it.rule, 0) + 1
                 keep.add(ds_db.fprint(payload["doc_key"], it.rule,
                                       payload["locator"], it.message))
-            db.resolve_missing(f"{doc['lang']}/{doc['section']}/{doc['slug']}", keep, run_id)
+            db.resolve_missing(f"{doc['lang']}/{doc['section']}/{doc['slug']}", keep, run_id,
+                               rules=set(rules))
             if done % 100 == 0 or done == len(rows):
                 log(f"   进度 {done}/{len(rows)}  本次问题 {total_seen}（新增 {total_new}）"
                     f"  {done/(time.time()-t0):.1f}篇/s")

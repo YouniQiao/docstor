@@ -101,7 +101,10 @@ def ingest(args) -> int:
     t0 = time.time()
     run_id = db.start_run("ingest", f"{lang}/{section}")
     log(f"📂 拉取目录树 {lang}/{section} …")
-    root = api.tree(section, lang)
+    # 英文站的板块别名与中文不完全相同（如「问题处理与运维」在 en 叫 dev-faq）
+    EN_SECTION_ALIAS = {"tools-faq": "dev-faq"}
+    api_section = EN_SECTION_ALIAS.get(section, section) if lang == "en" else section
+    root = api.tree(api_section, lang)
     nodes = flatten_nodes(root)
     db.replace_section_nodes(lang, section, nodes)
     # 注意：有子节点的节点也可能是一篇文档（如「ExtensionAbility组件」概述页），
