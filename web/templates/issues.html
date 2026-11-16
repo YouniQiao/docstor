@@ -237,7 +237,8 @@ async function loadList(){
                  title="${esc(lang + '/' + section + '/' + slug)}">链接</a></td>
           <td class="off">${it.official_url
               ? `<a href="${esc(it.official_url)}" target="_blank" rel="noopener noreferrer" title="${esc(it.official_url)}">链接</a>`
-              : '<span class="meta">—</span>'}</td>
+              : (it.official_gone ? '<span class="meta" title="官网已查不到这篇">已下架</span>'
+                                  : '<span class="meta">—</span>')}</td>
           <td class="meta">${esc((it.first_seen||'').slice(0,10))}</td>
         </tr>`;
       }).join('') + '</tbody></table>';

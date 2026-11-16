@@ -16,6 +16,7 @@ BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
 import checks  # noqa: E402
+import ds_catalog
 import ds_db  # noqa: E402
 import ds_alias  # noqa: E402
 import ds_rules  # noqa: E402
@@ -271,8 +272,9 @@ def api_issues():
             pass
         doc_key = r["doc_key"] or ""
         parts = doc_key.split("/")
-        official = r["doc_url"] or (ds_db.official_url(r["lang"], r["section"], parts[-1] or "",
-                                                      int(r["is_api"] or 0)) if len(parts) == 3 else "")
+        # 官网原文地址：按实测目录拼（板块 ≠ 目录时按板块拼会 404，如 games 文档在 games-guides 下）
+        official = (ds_catalog.url_for(r["lang"], r["section"], parts[-1] or "", int(r["is_api"] or 0))
+                    if len(parts) == 3 else (r["doc_url"] or ""))
         href, link_text = _link_meta(doc_key, loc)
         items.append({**{k: r[k] for k in r.keys()},
                       "rule_label": checks.rule_label(r["rule"]),
@@ -281,7 +283,8 @@ def api_issues():
                       "href": href,
                       "link_text": link_text,
                       "suggest": loc.get("new", ""),
-                      "official_url": official})
+                      "official_url": official,
+                      "official_gone": (not official)})
     return jsonify({"total": total, "page": page, "size": size,
                     "pages": (total + size - 1) // size, "items": items})
 
