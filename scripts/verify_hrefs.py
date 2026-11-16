@@ -71,6 +71,9 @@ def main() -> int:
         except Exception:  # noqa: BLE001
             continue
         h = loc.get("href") or ""
+        if not h:
+            from checks.link_check import abs_href
+            h = abs_href(loc.get("target") or "")
         m = DOC_RE.match(h)
         if not m:
             continue
