@@ -5,6 +5,7 @@ import json
 import os
 import re
 import time
+from urllib.parse import unquote
 from pathlib import Path
 
 import ds_catalog
@@ -174,11 +175,71 @@ def _anchor_index(ctx, lang: str, section: str) -> dict[str, set[str]] | None:
     return idx
 
 
+_HEAD_CACHE: dict[tuple[str, str, str], set[str]] = {}
+
+
+def _norm_anchor(s: str) -> str:
+    """锚点归一：去掉大小写、空格、连字符、标点差异，中文标点也一并去掉。
+
+    链接里写的是文档站渲染后的 slug（小写、空格转连字符、去标点），
+    而 anchors_json 里是官网原始 anchorId（保留大小写和空格），
+    直接比字符串会把「#通过appgallery-connect配置应用图标」这类全判成失效。
+    """
+    from urllib.parse import unquote
+    s = s or ""
+    for _ in range(2):            # 有的链接被编码两次（%25E5…）
+        s = unquote(s)
+    s = re.sub(r"<[^>]+>", "", s)  # 标题里的 <sup>11</sup> / <br>
+    s = re.sub(r"\\(.)", r"\1", s)  # markdown 转义 \_
+    s = s.lower()
+    return re.sub(r"[^0-9a-z\u4e00-\u9fff]+", "", s)
+
+
+def _heading_ids(ctx, lang: str, section: str, slug: str) -> set[str]:
+    """目标文档里所有标题的归一化写法（含「标题原文」与「slug 化」两种）。"""
+    key = (lang, section, slug)
+    if key in _HEAD_CACHE:
+        return _HEAD_CACHE[key]
+    out: set[str] = set()
+    p = _docs_root(ctx) / lang / section / f"{slug}.md"
+    try:
+        text = p.read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        _HEAD_CACHE[key] = out
+        return out
+    for line in text.splitlines():
+        m = re.match(r"^#{1,6}\s+(.+?)\s*#*\s*$", line)
+        if not m:
+            continue
+        title = m.group(1)
+        out.add(_norm_anchor(title))
+        # 标题里的行内代码/加粗/链接会带符号，去掉后再来一份
+        cleaned = re.sub(r"\[([^\]]*)\]\([^)]*\)", r"\1", title)
+        out.add(_norm_anchor(re.sub(r"[`*_\[\]()]", "", cleaned)))
+    _HEAD_CACHE[key] = out
+    return out
+
+
 def _anchor_exists(ctx, lang: str, section: str, slug: str, anchor: str) -> bool:
     idx = _anchor_index(ctx, lang, section)
     if idx is None:
         return True  # 缺锚点表时不误报
-    return anchor in idx.get(slug, set())
+    want = _norm_anchor(anchor)
+    if not want:
+        return True
+    # docsify 给重名标题加 -1/-2 后缀，带上也算能跳
+    # 注意要从原始串剥后缀：归一化会把 - 去掉，'decode-1' 会变成 'decode1'
+    base = _norm_anchor(re.sub(r"-\d+$", "", anchor.strip()))
+    ids = {_norm_anchor(a) for a in idx.get(slug, set())}
+    heads = _heading_ids(ctx, lang, section, slug)
+    for w in (want, base):
+        if w in ids or w in heads:
+            return True
+        # 标题带类名前缀（ScanCore.isDefaultScanSupported），链接只写方法名 → 后缀匹配
+        # 方法名锚点很短（#start / #init / #stop），阈值放到 4 个字
+        if any(h.endswith(w) for h in heads if len(w) >= 4):
+            return True
+    return False
 
 
 _OFFICIAL = None
@@ -335,6 +396,13 @@ def check_mirror_missing(doc, ctx):
     return []
 
 
+# 官网正文里由编辑器自动生成的 id（section123、li456、ZH-CN_TOPIC_0000001__xxx），
+# markdown 里不存在这种 id，本地无法核实，不能当失效报
+AUTO_ID_RE = re.compile(
+    r"^(?:[a-z]{2}[-_][a-z]{2}_topic_\d+|section\d{3,}|(?:li|ul|p|div|span|table|img|h[1-6])\d{3,})",
+    re.I)
+
+
 @register("link.anchor", label="锚点失效")
 def check_anchor(doc, ctx):
     out = []
@@ -347,6 +415,8 @@ def check_anchor(doc, ctx):
             continue
         if _target_exists(ctx, lang, section, slug) and not _anchor_exists(
                 ctx, lang, section, slug, frag):
+            if AUTO_ID_RE.match(unquote(frag or "")):
+                continue                  # 自动生成的 id，无法核实
             title, aid = ctx.anchor_for_line(line_no)
             out.append(Issue("link.anchor",
                              f"锚点在目标文档中不存在：{target}",
