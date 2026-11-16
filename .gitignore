@@ -15,3 +15,9 @@ venv/
 *.swp
 .idea/
 .vscode/
+
+# ── 凭据（千万不入库）──
+*.env
+.env.*
+.ai.env
+.admin.env
