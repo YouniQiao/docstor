@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>每日文档增量记录 · 鸿蒙开发者文档</title>
+<style>
+  :root{--accent:#2f6fed;--accent-weak:#eaf1ff;--border:#e6e8eb;--muted:#6b7280;--danger:#d94a4a;--warn:#b3761f;--info:#57606a;--add:#1a7f37;--del:#b03030}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;color:#1f2430;background:#f7f8fa}
+  header{background:#fff;border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:10}
+  header h1{font-size:17px;margin:0}
+  header a{color:var(--muted);text-decoration:none;font-size:13px}
+  header a:hover{color:var(--accent)}
+  .wrap{max-width:1180px;margin:18px auto;padding:0 20px 60px}
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+  .card .n{font-size:22px;font-weight:700}
+  .card .l{color:var(--muted);font-size:12px;margin-top:2px}
+  .panel{background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px 14px 12px;margin-bottom:14px}
+  .ptitle{font-size:13px;font-weight:700;color:#374151;padding:10px 0 6px}
+  table{width:100%;border-collapse:collapse;background:#fff;font-size:13px}
+  th,td{padding:9px 10px;border-bottom:1px solid #f0f1f3;text-align:left;vertical-align:top}
+  th{background:#fafbfc;color:#4b5563;font-weight:600;font-size:12px;white-space:nowrap}
+  tbody tr:hover td{background:#fcfdff}
+  tbody tr.sel td{background:var(--accent-weak)}
+  tbody tr.dayrow{cursor:pointer}
+  .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .tag{display:inline-block;font-size:11px;padding:1px 7px;border-radius:5px;background:#f1f3f6;color:#4b5563;white-space:nowrap}
+  .k-added{background:#e7f5ec;color:var(--add)}
+  .k-modified{background:#fdf3e3;color:var(--warn)}
+  .k-deleted{background:#fdeaea;color:var(--del)}
+  .add{color:var(--add);font-weight:600}
+  .mod{color:var(--warn);font-weight:600}
+  .del{color:var(--del);font-weight:600}
+  .zero{color:#b9bec7}
+  .filters{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:4px 0 10px}
+  select,input[type=text]{border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px;background:#fff;color:#1f2430}
+  input[type=text]{min-width:220px}
+  .link{color:var(--accent);text-decoration:none}
+  .link:hover{text-decoration:underline}
+  .muted{color:var(--muted);font-size:12px}
+  .pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;padding-top:12px;font-size:13px}
+  .pager button{border:1px solid var(--border);background:#fff;border-radius:7px;padding:4px 10px;cursor:pointer;font-size:13px}
+  .pager button:disabled{color:#c3c7cf;cursor:default}
+  .empty{padding:22px 4px;color:var(--muted);font-size:13px}
+  #items-wrap{overflow-x:auto}
+  #items-wrap table{min-width:860px;table-layout:fixed}
+  #items-wrap th.c-kind{width:88px} #items-wrap th.c-title{width:auto}
+  #items-wrap th.c-lang{width:64px} #items-wrap th.c-sec{width:120px}
+  #items-wrap th.c-ver{width:110px} #items-wrap th.c-doc{width:76px} #items-wrap th.c-off{width:76px}
+  @media (max-width:720px){
+    .wrap{padding:0 12px 40px}
+    header{padding:12px 14px;gap:10px}
+    .cards{grid-template-columns:repeat(2,1fr)}
+    input[type=text]{min-width:0;flex:1}
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>每日文档增量记录</h1>
+  <a href="/issues">← 全量问题</a>
+  <a href="/">返回文档站</a>
+  <span style="flex:1"></span>
+  <span class="muted" id="updated"></span>
+</header>
+
+<div class="wrap">
+  <div class="cards">
+    <div class="card"><div class="n" id="k-docs">—</div><div class="l">官网文档总数</div></div>
+    <div class="card"><div class="n" id="k-today-add">—</div><div class="l">今日新增</div></div>
+    <div class="card"><div class="n" id="k-today-mod">—</div><div class="l">今日修改</div></div>
+    <div class="card"><div class="n" id="k-today-del">—</div><div class="l">今日删除</div></div>
+    <div class="card"><div class="n" id="k-last">—</div><div class="l">最近一次同步</div></div>
+  </div>
+
+  <div class="panel">
+    <div class="ptitle">按日期汇总（点一行看当天变更明细）</div>
+    <div id="days-wrap"><div class="empty">加载中…</div></div>
+  </div>
+
+  <div class="panel" id="detail" style="display:none">
+    <div class="ptitle" id="detail-title">当日变更明细</div>
+    <div class="filters">
+      <select id="f-kind">
+        <option value="">全部变更</option>
+        <option value="added">新增</option>
+        <option value="modified">修改</option>
+        <option value="deleted">删除</option>
+      </select>
+      <select id="f-lang">
+        <option value="">全部语言</option>
+        <option value="cn">中文</option>
+        <option value="en">英文</option>
+      </select>
+      <select id="f-section"><option value="">全部板块</option></select>
+      <input type="text" id="f-q" placeholder="标题关键字" autocomplete="off">
+      <span style="flex:1"></span>
+      <span class="muted" id="items-count"></span>
+    </div>
+    <div id="items-wrap"><div class="empty">加载中…</div></div>
+    <div class="pager">
+      <span class="muted" id="page-info"></span>
+      <button id="p-prev">上一页</button>
+      <button id="p-next">下一页</button>
+    </div>
+  </div>
+</div>
+
+<script>
+const NF = n => (n == null || n === '' ? '—' : Number(n).toLocaleString('zh-CN'));
+const state = { day: '', page: 1, size: 50, pages: 1, secNames: {} };
+
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, c => (
+  {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+
+function pctCls(kind){ return kind === 'added' ? 'k-added' : kind === 'modified' ? 'k-modified' : 'k-deleted'; }
+function kindLabel(kind){ return {added:'新增', modified:'修改', deleted:'删除'}[kind] || kind; }
+
+async function loadDays(){
+  const r = await fetch('/api/sync/days');
+  const d = await r.json();
+  state.secNames = d.section_names || {};
+  // 板块下拉
+  const sel = document.getElementById('f-section');
+  sel.innerHTML = '<option value="">全部板块</option>' +
+    (d.sections || []).map(s => `<option value="${esc(s.key)}">${esc(s.name)}</option>`).join('');
+
+  document.getElementById('k-docs').textContent = NF(d.docs_total);
+  const today = (d.days && d.days[0]) ? d.days[0] : null;
+  const isToday = today && today.d === d.today;
+  document.getElementById('k-today-add').textContent = NF(isToday ? today.added : 0);
+  document.getElementById('k-today-mod').textContent = NF(isToday ? today.modified : 0);
+  document.getElementById('k-today-del').textContent = NF(isToday ? today.deleted : 0);
+  document.getElementById('k-last').textContent = d.last_run ? d.last_run.slice(5, 16) : '—';
+  document.getElementById('updated').textContent = '更新于 ' + new Date().toLocaleString('zh-CN');
+
+  const days = d.days || [];
+  const wrap = document.getElementById('days-wrap');
+  if (!days.length){
+    wrap.innerHTML = '<div class="empty">还没有同步记录。每日 03:30 自动同步后，这里会按天记录官网文档的新增 / 修改 / 删除。</div>';
+    return;
+  }
+  wrap.innerHTML = `<table><thead><tr>
+      <th>日期</th><th class="num">新增</th><th class="num">修改</th><th class="num">删除</th>
+      <th class="num">任务数</th><th class="num">耗时</th><th>明细</th>
+    </tr></thead><tbody>` + days.map(x => `
+      <tr class="dayrow ${x.d === state.day ? 'sel' : ''}" data-day="${x.d}">
+        <td>${x.d}</td>
+        <td class="num ${x.added ? 'add' : 'zero'}">${NF(x.added)}</td>
+        <td class="num ${x.modified ? 'mod' : 'zero'}">${NF(x.modified)}</td>
+        <td class="num ${x.deleted ? 'del' : 'zero'}">${NF(x.deleted)}</td>
+        <td class="num">${NF(x.runs)}</td>
+        <td class="num">${x.secs ? Math.round(x.secs / 60) + ' 分钟' : '—'}</td>
+        <td><a class="link" href="#" data-day="${x.d}">查看</a></td>
+      </tr>`).join('') + '</tbody></table>';
+
+  wrap.querySelectorAll('[data-day]').forEach(el => el.addEventListener('click', ev => {
+    if (ev.target.tagName === 'A') ev.preventDefault();
+    selectDay(el.dataset.day);
+  }));
+}
+
+function selectDay(day){
+  state.day = day; state.page = 1;
+  document.getElementById('detail').style.display = 'block';
+  document.getElementById('detail-title').textContent = day + ' 的文档变更明细';
+  document.querySelectorAll('.dayrow').forEach(tr => tr.classList.toggle('sel', tr.dataset.day === day));
+  loadItems();
+}
+
+async function loadItems(){
+  if (!state.day) return;
+  const p = new URLSearchParams({ date: state.day, page: state.page, size: state.size });
+  const kind = document.getElementById('f-kind').value;
+  const lang = document.getElementById('f-lang').value;
+  const section = document.getElementById('f-section').value;
+  const q = document.getElementById('f-q').value.trim();
+  if (kind) p.set('kind', kind);
+  if (lang) p.set('lang', lang);
+  if (section) p.set('section', section);
+  if (q) p.set('q', q);
+
+  const r = await fetch('/api/sync/items?' + p.toString());
+  const d = await r.json();
+  state.pages = d.pages || 1;
+  document.getElementById('items-count').textContent = `共 ${NF(d.total)} 条`;
+  document.getElementById('page-info').textContent = `第 ${d.page} / ${state.pages} 页`;
+  document.getElementById('p-prev').disabled = d.page <= 1;
+  document.getElementById('p-next').disabled = d.page >= state.pages;
+
+  const wrap = document.getElementById('items-wrap');
+  if (!d.items || !d.items.length){
+    wrap.innerHTML = '<div class="empty">这一天没有符合条件的文档变更。</div>';
+    return;
+  }
+  wrap.innerHTML = `<table><thead><tr>
+      <th class="c-kind">变更</th><th class="c-title">标题</th><th class="c-lang">语言</th>
+      <th class="c-sec">板块</th><th class="c-ver">版本</th>
+      <th class="c-doc">镜像文档</th><th class="c-off">官网文档</th>
+    </tr></thead><tbody>` + d.items.map(it => `
+      <tr>
+        <td><span class="tag ${pctCls(it.kind)}">${kindLabel(it.kind)}</span></td>
+        <td>${esc(it.title || it.slug)}</td>
+        <td>${it.lang === 'cn' ? '中文' : '英文'}</td>
+        <td>${esc(it.section_name || it.section)}</td>
+        <td>${it.old_version && it.version && it.old_version !== it.version
+              ? `${esc(it.old_version)} → ${esc(it.version)}` : esc(it.version || '—')}</td>
+        <td>${it.href ? `<a class="link" href="${esc(it.href)}" target="_blank" rel="noopener">链接</a>` : '—'}</td>
+        <td>${it.official_url ? `<a class="link" href="${esc(it.official_url)}" target="_blank" rel="noopener">链接</a>`
+              : `<span class="muted">已下架</span>`}</td>
+      </tr>`).join('') + '</tbody></table>';
+}
+
+document.getElementById('p-prev').onclick = () => { if (state.page > 1){ state.page--; loadItems(); } };
+document.getElementById('p-next').onclick = () => { if (state.page < state.pages){ state.page++; loadItems(); } };
+['f-kind','f-lang','f-section'].forEach(id =>
+  document.getElementById(id).addEventListener('change', () => { state.page = 1; loadItems(); }));
+let qTimer = null;
+document.getElementById('f-q').addEventListener('input', () => {
+  clearTimeout(qTimer); qTimer = setTimeout(() => { state.page = 1; loadItems(); }, 350);
+});
+
+loadDays();
+</script>
+</body>
+</html>

@@ -157,7 +157,9 @@ def ingest(args) -> int:
 
     session = build_session(cfg)
     delay = cfg["ingest"]["request_delay"]
-    stats = {"ok": 0, "fail": 0, "skip": 0, "images": 0, "videos": 0, "bytes": 0}
+    stats = {"ok": 0, "fail": 0, "skip": 0, "images": 0, "videos": 0, "bytes": 0,
+             "added": 0, "modified": 0, "deleted": 0}
+    changes: list[dict] = []  # 每日增量明细（写入 sync_items）
     failures: list[str] = []
     anchors_map: dict[str, list[dict]] = {}
 
@@ -189,7 +191,7 @@ def ingest(args) -> int:
             gif_min_bytes=cfg["media"]["gif_min_bytes"])
         md = ds_convert.normalize_headings(conv["markdown"], res.get("anchors") or [])
         path = doc_dir / f"{slug}.md"
-        new_hash = hashlib.md5(md.encode("utf-8")).hexdigest()
+        new_hash = ds_convert.stable_hash(md)
         if row is not None and row["content_hash"] == new_hash and path.exists():
             return {"ok": True, "unchanged": True, "slug": slug, "path": str(path),
                     "title": row["title"], "doc_id": row["doc_id"],
@@ -218,9 +220,22 @@ def ingest(args) -> int:
             n, doc_key, _row = futs[fut]
             if r["ok"]:
                 stats["skip" if r.get("unchanged") else "ok"] += 1
-                stats["images"] += r["images"]
-                stats["videos"] += r["videos"]
-                stats["bytes"] += r["bytes"]
+                if not r.get("unchanged"):
+                    # 只有真正变更的文档才累计图片/流量（早期写法把存量全算进「新增数据」，单板块虚报 1GB）
+                    kind = "added" if _row is None else "modified"
+                    stats[kind] += 1
+                    stats["images"] += r["images"]
+                    stats["videos"] += r["videos"]
+                    stats["bytes"] += r["bytes"]
+                    changes.append({
+                        "doc_key": doc_key, "kind": kind, "lang": lang, "section": section,
+                        "slug": r["slug"], "title": r.get("title") or "",
+                        "version": r.get("version"),
+                        "old_version": (_row["version"] if _row is not None else None),
+                    })
+                    if len(changes) >= 100:
+                        db.add_sync_items(run_id, changes)
+                        changes.clear()
                 anchors_map[r["slug"]] = r["anchors"]
                 db.upsert_doc({
                     "doc_key": doc_key, "lang": lang, "section": section,
@@ -256,6 +271,29 @@ def ingest(args) -> int:
             if delay:
                 time.sleep(delay / max(1, cfg["ingest"]["workers"]))
 
+    db.add_sync_items(run_id, changes)
+    changes.clear()
+
+    # 官网已撤稿的文档：本次目录树里没有的，保守判定（超过阈值就整批跳过，
+    # 防止目录接口返回不完整时一次标掉半个板块）
+    if not args.limit and not getattr(args, "only_missing", False) and uniq:
+        cur_slugs = {n["slug"] for n in uniq}
+        rows = db.conn.execute(
+            "SELECT doc_key, slug, title FROM docs WHERE lang=? AND section=? AND status='ok'",
+            (lang, section)).fetchall()
+        gone = [r for r in rows if r["slug"] not in cur_slugs]
+        limit_ = max(50, int(len(rows) * 0.05))
+        if len(gone) > limit_:
+            log(f"   ⚠ 本次判定删除 {len(gone)} 篇（>{limit_}），疑似目录接口不完整，跳过")
+        elif gone:
+            db.mark_docs_gone([g["doc_key"] for g in gone])
+            db.add_sync_items(run_id, [{
+                "doc_key": g["doc_key"], "kind": "deleted", "lang": lang,
+                "section": section, "slug": g["slug"], "title": g["title"] or "",
+            } for g in gone])
+            stats["deleted"] = len(gone)
+            log(f"   🗑  官网已撤稿 {len(gone)} 篇（status=gone）")
+
     old_anchors_path.write_text(json.dumps(anchors_map, ensure_ascii=False, indent=0),
                                 encoding="utf-8")
     stats["elapsed_s"] = round(time.time() - t0, 1)
@@ -264,6 +302,7 @@ def ingest(args) -> int:
     rec = db.export_meta(lang, section, doc_dir)   # 供前端「更新时间」使用
     db.close()
 
+    log(f"\n📈 本次变化: 新增 {stats['added']} 修改 {stats['modified']} 删除 {stats['deleted']}")
     log(f"\n✅ 抓取完成 {lang}/{section}: ok={stats['ok']} fail={stats['fail']} "
         f"图={stats['images']} 视频={stats['videos']} "
         f"新增数据={stats['bytes']/1048576:.1f}MB 用时={stats['elapsed_s']}s")

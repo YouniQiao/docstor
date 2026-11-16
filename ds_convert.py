@@ -59,6 +59,22 @@ def _md5(s: str) -> str:
     return hashlib.md5(s.encode("utf-8")).hexdigest()
 
 
+# 华为 CDN 的图片/视频/下载链接带时效签名，每次抓取都会变：
+#   图片/视频：?HW-CC-KV=V1&HW-CC-Date=20261116T143942Z&HW-CC-Expire=…&HW-CC-Sign=…
+#   下载链接：:20261117223942:2800:649F096C…
+# 直接对 md 做 md5 会让「没改过的文档」每次都算变更（实测单板块 24 篇假修改），
+# 判据一律用剔除签名后的 stable_hash。
+_DYN_QUERY_RE = re.compile(r"[?&]HW-CC-[A-Za-z]+=[^&\s)\"']*")
+_DL_TOKEN_RE = re.compile(r":\d{14}:\d+:[A-F0-9]{40,}")
+
+
+def stable_hash(text: str) -> str:
+    """剔除时效签名后的内容哈希（判「文档有没有改」用这个）。"""
+    t = _DYN_QUERY_RE.sub("", text)
+    t = _DL_TOKEN_RE.sub("", t)
+    return hashlib.md5(t.encode("utf-8")).hexdigest()
+
+
 def gif_to_mp4(src: Path, dst: Path, crf: int = 23, preset: str = "veryfast") -> bool:
     """GIF → H.264 MP4。成功返回 True。"""
     cmd = ["ffmpeg", "-y", "-loglevel", "error", "-i", str(src),

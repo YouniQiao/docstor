@@ -6,6 +6,7 @@ import hmac
 import json
 import os
 import re
+from datetime import datetime
 import sys
 from pathlib import Path
 
@@ -336,6 +337,86 @@ EXPORT_COLS = [
     ("镜像文档", 52), ("官网文档", 52), ("状态", 10), ("识别日期", 12),
     ("最近发现", 20), ("解决时间", 20), ("严重级别", 10), ("文档标识", 46),
 ]
+
+
+@app.get("/sync")
+def sync_page():
+    return render_template("sync.html")
+
+
+@app.get("/api/sync/days")
+def api_sync_days():
+    """按天汇总的抓取记录（新增/修改/删除/耗时/任务数）。"""
+    c = conn()
+    rows = c.execute(
+        """SELECT date(started_at) d, COUNT(*) runs,
+                  SUM(COALESCE(json_extract(stats,'$.added'),0)) added,
+                  SUM(COALESCE(json_extract(stats,'$.modified'),0)) modified,
+                  SUM(COALESCE(json_extract(stats,'$.deleted'),0)) deleted,
+                  SUM(COALESCE(json_extract(stats,'$.elapsed_s'),0)) secs
+           FROM runs WHERE kind='ingest' GROUP BY d ORDER BY d DESC LIMIT 120""").fetchall()
+    docs_total = c.execute("SELECT COUNT(*) n FROM docs WHERE status='ok'").fetchone()["n"]
+    last = c.execute("SELECT started_at FROM runs WHERE kind='ingest' "
+                     "ORDER BY id DESC LIMIT 1").fetchone()
+    secs = [r["section"] for r in c.execute(
+        "SELECT DISTINCT section FROM docs WHERE status='ok' ORDER BY 1")]
+    return jsonify({
+        "today": datetime.now().strftime("%Y-%m-%d"),
+        "docs_total": docs_total,
+        "last_run": last["started_at"] if last else None,
+        "days": [dict(r) for r in rows],
+        "sections": [{"key": s, "name": SECTION_NAMES.get(s, s)} for s in secs],
+    })
+
+
+@app.get("/api/sync/items")
+def api_sync_items():
+    """某一天的逐条变更明细。"""
+    date_s = request.args.get("date", "").strip()
+    kind = request.args.get("kind", "")
+    lang = request.args.get("lang", "")
+    section = request.args.get("section", "")
+    q = request.args.get("q", "").strip()
+    page = max(1, int(request.args.get("page", 1)))
+    size = min(200, max(10, int(request.args.get("size", 50))))
+
+    where, args = ["1=1"], []
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_s or ""):
+        where.append("date(r.started_at)=?"); args.append(date_s)
+    if kind in ("added", "modified", "deleted"):
+        where.append("i.kind=?"); args.append(kind)
+    if lang in ("cn", "en"):
+        where.append("i.lang=?"); args.append(lang)
+    if section:
+        where.append("i.section=?"); args.append(section)
+    if q:
+        where.append("i.title LIKE ?"); args.append(f"%{q}%")
+    base = ("FROM sync_items i JOIN runs r ON r.id=i.run_id "
+            "LEFT JOIN docs d ON d.doc_key=i.doc_key WHERE " + " AND ".join(where))
+    c = conn()
+    total = c.execute("SELECT COUNT(*) n " + base, args).fetchone()["n"]
+    rows = c.execute("SELECT i.doc_key, i.kind, i.lang, i.section, i.slug, i.title, i.version, "
+                     "i.old_version, r.started_at, d.is_api " + base +
+                     " ORDER BY CASE i.kind WHEN 'deleted' THEN 1 ELSE 0 END, i.id DESC"
+                     " LIMIT ? OFFSET ?", args + [size, (page - 1) * size]).fetchall()
+    items = []
+    for r in rows:
+        official = ""
+        if r["slug"]:
+            try:
+                official = ds_catalog.url_for(r["lang"], r["section"], r["slug"],
+                                              int(r["is_api"] or 0))
+            except Exception:  # noqa: BLE001
+                official = ""
+        items.append({
+            "doc_key": r["doc_key"], "kind": r["kind"], "lang": r["lang"],
+            "section": r["section"], "section_name": SECTION_NAMES.get(r["section"], r["section"]),
+            "slug": r["slug"], "title": r["title"], "version": r["version"],
+            "old_version": r["old_version"], "started_at": r["started_at"],
+            "href": f"/#/{r['doc_key']}", "official_url": official,
+        })
+    return jsonify({"total": total, "page": page, "size": size,
+                    "pages": (total + size - 1) // size, "items": items})
 
 
 @app.get("/api/sync-status")

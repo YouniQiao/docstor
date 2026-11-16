@@ -70,6 +70,16 @@ CREATE TABLE IF NOT EXISTS runs(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   kind TEXT, target TEXT, started_at TEXT, finished_at TEXT, stats TEXT
 );
+
+-- 每日文档增量的逐条明细（新增/修改/删除），按 run_id 挂在 runs 上
+CREATE TABLE IF NOT EXISTS sync_items(
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  run_id INTEGER NOT NULL,
+  doc_key TEXT, kind TEXT, lang TEXT, section TEXT, slug TEXT,
+  title TEXT, version TEXT, old_version TEXT, extra TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_sync_items_run ON sync_items(run_id);
+CREATE INDEX IF NOT EXISTS idx_sync_items_kind ON sync_items(kind);
 """
 
 
@@ -285,6 +295,28 @@ class DB:
         self.conn.execute("UPDATE runs SET finished_at=?, stats=? WHERE id=?",
                           (now(), json.dumps(stats, ensure_ascii=False), run_id))
         self.conn.commit()
+
+    # ---------- 每日增量明细 ----------
+    def add_sync_items(self, run_id: int, items: list[dict]) -> None:
+        """记录本次变更的文档（批量）。"""
+        if not items:
+            return
+        self.conn.executemany(
+            "INSERT INTO sync_items(run_id,doc_key,kind,lang,section,slug,title,version,"
+            "old_version,extra) VALUES(?,?,?,?,?,?,?,?,?,?)",
+            [(run_id, i.get("doc_key"), i.get("kind"), i.get("lang"), i.get("section"),
+              i.get("slug"), i.get("title"), i.get("version"), i.get("old_version"),
+              json.dumps(i.get("extra") or {}, ensure_ascii=False)) for i in items])
+        self.conn.commit()
+
+    def mark_docs_gone(self, doc_keys: list[str]) -> int:
+        """官网已撤稿的文档置 status='gone'（不删文件，便于复查）。"""
+        if not doc_keys:
+            return 0
+        self.conn.executemany("UPDATE docs SET status='gone' WHERE doc_key=?",
+                              [(k,) for k in doc_keys])
+        self.conn.commit()
+        return len(doc_keys)
 
     def close(self) -> None:
         self.conn.close()
