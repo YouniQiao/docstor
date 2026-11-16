@@ -161,14 +161,36 @@ def favicon():
 
 
 # ---------------- API ----------------
+def _enabled_rules() -> list[str]:
+    """已开启的检查项。关闭的检查项不进全量问题：卡片、列表、侧栏、文档问题面板一律不显示。"""
+    try:
+        cfg = ds_rules.all_settings(conn())
+    except Exception:  # noqa: BLE001
+        cfg = {}
+    out = []
+    for rule, meta in checks.REGISTRY.items():
+        c = cfg.get(rule) or {}
+        if c.get("enabled", meta.get("default_on", True)):
+            out.append(rule)
+    return out
+
+
+def _enabled_filter(col: str = "rule") -> tuple[str, list]:
+    rules = _enabled_rules()
+    if not rules:
+        return "1=0", []
+    return f"{col} IN ({','.join('?' * len(rules))})", rules
+
+
 @app.get("/api/sidebar-counts")
 def api_sidebar_counts():
     lang = request.args.get("lang", "cn")
     section = request.args.get("section", "")
+    fw, fa = _enabled_filter()
     rows = conn().execute(
-        """SELECT doc_key, rule, COUNT(*) n FROM issues
-           WHERE lang=? AND section=? AND status='open' GROUP BY doc_key, rule""",
-        (lang, section)).fetchall()
+        f"""SELECT doc_key, rule, COUNT(*) n FROM issues
+           WHERE lang=? AND section=? AND status='open' AND {fw} GROUP BY doc_key, rule""",
+        [lang, section] + fa).fetchall()
     out: dict[str, dict] = {}
     for r in rows:
         slug = r["doc_key"].rsplit("/", 1)[-1]
@@ -184,11 +206,12 @@ def api_doc_issues():
     section = request.args.get("section", "")
     slug = request.args.get("slug", "")
     doc_key = f"{lang}/{section}/{slug}"
+    fw, fa = _enabled_filter()
     rows = conn().execute(
-        """SELECT rule, severity, locator, message FROM issues
-           WHERE doc_key=? AND status='open'
+        f"""SELECT rule, severity, locator, message FROM issues
+           WHERE doc_key=? AND status='open' AND {fw}
            ORDER BY CASE severity WHEN 'error' THEN 0 WHEN 'warn' THEN 1 ELSE 2 END,
-                    rule, id""", (doc_key,)).fetchall()
+                    rule, id""", [doc_key] + fa).fetchall()
     issues = []
     for r in rows:
         loc = {}
@@ -252,6 +275,9 @@ def api_issues():
     if q:
         where.append("(i.message LIKE ? OR i.doc_key LIKE ?)")
         args += [f"%{q}%", f"%{q}%"]
+    _fw, _fa = _enabled_filter("i.rule")
+    where.append(_fw)
+    args += _fa
     w = " AND ".join(where)
 
     total = conn().execute(f"SELECT COUNT(*) n FROM issues i WHERE {w}", args).fetchone()["n"]
@@ -304,14 +330,15 @@ def _section_opts(rows):
 
 def _cat_opts(col: str, sort_col: str):
     """doc_cat 某目录列 → 选项清单（0 条问题的也列出来，置灰显示）。"""
+    fw, fa = _enabled_filter("i.rule")
     try:
         rows = conn().execute(
             f"""SELECT c.lang, c.section, c.{col} AS v, MIN(c.{sort_col}) s,
                        COUNT(i.id) n_all, SUM(CASE WHEN i.status='open' THEN 1 ELSE 0 END) n
                 FROM doc_cat c LEFT JOIN issues i
-                  ON i.doc_key = c.lang || '/' || c.section || '/' || c.slug
+                  ON i.doc_key = c.lang || '/' || c.section || '/' || c.slug AND {fw}
                 WHERE c.{col} IS NOT NULL AND c.{col} != ''
-                GROUP BY 1,2,3 ORDER BY 1,2,s""").fetchall()
+                GROUP BY 1,2,3 ORDER BY 1,2,s""", fa).fetchall()
     except Exception:  # noqa: BLE001  doc_cat 还没建
         return []
     return [{"lang": r["lang"], "section": r["section"], "name": r["v"],
@@ -329,13 +356,14 @@ def _domain_opts():
 def _kit_opts():
     """Kit 选项要带上所属领域，前端选中领域后才列出该领域下的 Kit。"""
     try:
+        fw, fa = _enabled_filter("i.rule")
         rows = conn().execute(
-            """SELECT c.lang, c.section, c.domain, c.kit AS v, MIN(c.sort_kit) s,
+            f"""SELECT c.lang, c.section, c.domain, c.kit AS v, MIN(c.sort_kit) s,
                       COUNT(i.id) n_all, SUM(CASE WHEN i.status='open' THEN 1 ELSE 0 END) n
                FROM doc_cat c LEFT JOIN issues i
-                 ON i.doc_key = c.lang || '/' || c.section || '/' || c.slug
+                 ON i.doc_key = c.lang || '/' || c.section || '/' || c.slug AND {fw}
                WHERE c.kit IS NOT NULL AND c.kit != ''
-               GROUP BY 1,2,3,4 ORDER BY 1,2,MIN(c.sort_domain),s""").fetchall()
+               GROUP BY 1,2,3,4 ORDER BY 1,2,MIN(c.sort_domain),s""", fa).fetchall()
     except Exception:  # noqa: BLE001
         return []
     return [{"lang": r["lang"], "section": r["section"], "domain": r["domain"], "name": r["v"],
@@ -344,15 +372,17 @@ def _kit_opts():
 
 @app.get("/api/facets")
 def api_facets():
+    fw, fa = _enabled_filter()
     by_rule = [r for r in conn().execute(
-        """SELECT rule, COUNT(*) n_all, SUM(status='open') n FROM issues
-           GROUP BY rule ORDER BY n DESC""")
-        if r["rule"] in checks.REGISTRY]   # 已下线的规则不再出卡片
+        f"""SELECT rule, COUNT(*) n_all, SUM(status='open') n FROM issues
+            WHERE {fw} GROUP BY rule ORDER BY n DESC""", fa)
+        if r["rule"] in checks.REGISTRY]   # 已下线的规则不再出卡片；已关闭的不显示
     by_lang = conn().execute(
-        """SELECT lang, COUNT(*) n FROM issues WHERE status='open' GROUP BY lang""").fetchall()
+        f"""SELECT lang, COUNT(*) n FROM issues WHERE status='open' AND {fw}
+            GROUP BY lang""", fa).fetchall()
     by_section = conn().execute(
-        """SELECT lang, section, COUNT(*) n_all, SUM(status='open') n FROM issues
-           GROUP BY lang, section ORDER BY n DESC""").fetchall()
+        f"""SELECT lang, section, COUNT(*) n_all, SUM(status='open') n FROM issues
+            WHERE {fw} GROUP BY lang, section ORDER BY n DESC""", fa).fetchall()
     cfg = ds_rules.all_settings(conn())
 
     def _rule_state(rule):
