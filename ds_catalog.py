@@ -82,8 +82,27 @@ def _from_index(lang: str, slug: str) -> str:
     return (row[0] or "") if row else ""
 
 
+# slug 前缀 → 目录的强提示（目录树索引里没有的那些老文档靠它少打几十次接口）
+PREFIX_CATS = [
+    ("gameobe", "games-guides"), ("gamemme", "games-guides"), ("games", "games-guides"),
+    ("game-", "games-guides"), ("agc", "app"), ("quickgame", "quickApp-Guides"),
+    ("cj-", "cangjie-guides"), ("rtm", "AppGallery-connect-References"),
+    ("faqs-", "harmonyos-faqs"), ("card-", "atomic-guides"),
+]
+
+
+def _all_catalogs() -> list[str]:
+    """官网目录树里出现过的全部目录名（含 games-guides 等不在 ALL_CATS 里的）。"""
+    db = _db()
+    try:
+        rows = db.execute("SELECT DISTINCT catalog FROM catalog_index").fetchall()
+    except sqlite3.Error:
+        return []
+    return [r[0] for r in rows if r[0]]
+
+
 def resolve(lang: str, section: str, slug: str, is_api: int = 0) -> str:
-    """这篇属于哪个目录：目录树索引 → 板块对应目录 → 全目录实测。"""
+    """这篇属于哪个目录：目录树索引 → 板块对应目录 → 前缀提示 → 全目录实测。"""
     cat = _from_index(lang, slug)
     if cat:
         put(lang, slug, cat)
@@ -93,7 +112,9 @@ def resolve(lang: str, section: str, slug: str, is_api: int = 0) -> str:
         cats.append("harmonyos-references")
     if section:
         cats += list(ds_official.SECTION_CATS.get(section, []))
+    cats += [c for pre, c in PREFIX_CATS if slug.startswith(pre)]
     cats += list(ds_official.ALL_CATS)
+    cats += _all_catalogs()
     api = _api()
     for cat in dict.fromkeys(cats):
         try:
