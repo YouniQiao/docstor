@@ -17,7 +17,12 @@ HTML_LINK_RE = re.compile(r"<a[^>]+href=[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", re.
 INTERNAL_RE = re.compile(r"^/(cn|en)/([A-Za-z0-9_\-]+)/([A-Za-z0-9_.\-]+)(?:#(.*))?$")
 # 相对路径的 *.md 链接（如 `arkts-apis-image-PixelMap.md#release7`），docsify 会拼成同板块路由
 REL_MD_RE = re.compile(r"^(?!https?:|/|#|mailto:|javascript:)([^)\s]+?\.md)(#[^\s]*)?$")
-VINTAGE_RE = re.compile(r"-V\d{1,3}(?:/|$)|/doc/harmonyos-[a-z]+-V\d", re.I)
+# 历史版本文档的地址形如 /cn/harmonyos-guides-V5/xxx、/cn/harmonyos-releases-V2/…；
+# 只看「某一段路径整体以 -V<数字> 结尾」，且大小写敏感——ArkTS 状态管理 V1/V2 的
+# 文档名（arkts-mvvm-v2、arkts-state-management-v1）是小写，不是历史版本，别误报。
+VINTAGE_RE = re.compile(r"(?:^|/)[A-Za-z0-9][A-Za-z0-9._-]*-V\d{1,3}(?=[/?#]|$)")
+# 从地址里抠出具体版本号：…/doc/harmonyos-guides-V5/foo、…-V14、…-V5?x=1
+VINTAGE_VER = re.compile(r"[-/]V(\d{1,3})(?=[/?#]|$)", re.I)
 # 绝对地址指向官网文档中心的链接：SPA 对不存在的页面同样回 200，必须走内容接口
 # 文档里的占位地址：IANA 保留域名、本机地址——点开就是示例页，不算死链
 PLACEHOLDER_RE = re.compile(
@@ -352,10 +357,13 @@ def check_vintage(doc, ctx):
         if not target or not VINTAGE_RE.search(target):
             continue
         title, aid = ctx.anchor_for_line(line_no)
-        out.append(Issue("link.vintage", f"链接指向历史版本文档：{target}",
+        m = VINTAGE_VER.search(target)
+        ver = f"V{m.group(1)}" if m else ""
+        head = f"链接指向历史版本 {ver}" if ver else "链接指向历史版本"
+        out.append(Issue("link.vintage", f"{head}：{target}",
                          locator={"line": line_no, "target": target, "anchorId": aid,
-                                  "text": text, "href": abs_href(target)},
-                         anchor_text=title, evidence={"target": target}))
+                                  "text": text, "href": abs_href(target), "version": ver},
+                         anchor_text=title, evidence={"target": target, "version": ver}))
     return out
 
 
