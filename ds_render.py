@@ -69,7 +69,9 @@ def _run(url: str, budget: int = 25000, timeout: int = 150) -> tuple[str, str, i
     h = re.search(r"<h1[^>]*>(.*?)</h1>", out, re.S)
     h1 = html.unescape(re.sub(r"<[^>]+>", " ", h.group(1))).strip() if h else ""
     blank_h1 = not h1 or re.fullmatch(r"404|页?面?不存在|文档不存在|Not Found", h1)
-    ok = (not missing) and not blank_h1 and (core not in GENERIC or len(txt) > 3000)
+    # 论坛/控制台这类站点没有 h1，但标题正常、正文过万 → 也算能打开
+    bad_title = (not core) or core in GENERIC or bool(re.search(r"404|Not Found|不存在", core))
+    ok = (not missing) and ((not blank_h1) or ((not bad_title) and len(txt) > 1500))
     return ("ok" if ok else "missing"), (title or h1), len(out)
 
 
@@ -90,6 +92,37 @@ def check(lang: str, cat: str, slug: str, refresh: bool = False,
     db.execute("INSERT OR REPLACE INTO link_render(lang,cat,slug,verdict,title,bytes,checked_at)"
                " VALUES(?,?,?,?,?,?,?)",
                (lang, cat, slug, verdict, title, size, time.strftime("%Y-%m-%d %H:%M:%S")))
+    db.commit()
+    db.close()
+    return verdict
+
+
+URL_SCHEMA = """CREATE TABLE IF NOT EXISTS url_render(
+    url TEXT PRIMARY KEY, verdict TEXT, title TEXT, bytes INTEGER, checked_at TEXT)"""
+
+
+def check_url(url: str, refresh: bool = False, db_path: str | None = None) -> str:
+    """任意地址真渲染（外链用）：返回 ok / missing / timeout。
+
+    有些站点（docs.openharmony.cn 这类）对任何路径都回 404，正文靠 JS 渲染，
+    单看 HTTP 码会把能打开的页面判死。
+    """
+    db = sqlite3.connect(db_path or str(DB), timeout=30)
+    db.execute(URL_SCHEMA)
+    if not refresh:
+        row = db.execute("SELECT verdict, checked_at FROM url_render WHERE url=?",
+                         (url,)).fetchone()
+        if row:
+            try:
+                if time.time() - time.mktime(time.strptime(row[1], "%Y-%m-%d %H:%M:%S")) < TTL:
+                    db.close()
+                    return row[0]
+            except Exception:  # noqa: BLE001
+                pass
+    verdict, title, size = _run(url)
+    db.execute("INSERT OR REPLACE INTO url_render(url,verdict,title,bytes,checked_at)"
+               " VALUES(?,?,?,?,?)",
+               (url, verdict, title, size, time.strftime("%Y-%m-%d %H:%M:%S")))
     db.commit()
     db.close()
     return verdict

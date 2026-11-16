@@ -29,6 +29,21 @@ LINE_SKIP = ("```",)
 _RENDER_SEM = None
 
 
+def _url_render_ok(url: str) -> bool:
+    """外链 HTTP 404 时再真渲染一次：有些站点对任何路径都回 404，正文靠 JS 渲染。"""
+    global _RENDER_SEM
+    try:
+        import threading
+
+        import ds_render
+        if _RENDER_SEM is None:
+            _RENDER_SEM = threading.Semaphore(2)
+        with _RENDER_SEM:
+            return ds_render.check_url(url) == "ok"
+    except Exception:      # noqa: BLE001
+        return False
+
+
 def _render_says_ok(lang: str, section: str, slug: str) -> bool:
     """接口判死后最后一道关：无头渲染一次，页面真能打开就不算死链。
 
@@ -283,6 +298,8 @@ def check_external(doc, ctx):
             continue
         if ds_http.verdict(st, err) != "dead":
             continue                        # 反爬/需登录/临时故障一律不报
+        if st in (404, 410) and _url_render_ok(url):
+            continue                        # 伪 404：站点对任何路径都回 404，页面其实能开
         out.append(Issue("link.external", f"外链失效（HTTP {st}）：{url}",
                          severity="error", locator=loc, anchor_text=title,
                          evidence={"target": url, "status": st, "err": err}))
