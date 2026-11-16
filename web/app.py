@@ -11,7 +11,7 @@ from pathlib import Path
 
 import yaml
 from flask import (Flask, abort, jsonify, redirect, render_template, request,
-                   send_from_directory, session, url_for)
+                   send_file, send_from_directory, session, url_for)
 
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
@@ -41,6 +41,10 @@ def _load_env(path: Path) -> dict:
 
 _ENV = _load_env(BASE / ".admin.env")
 app = Flask(__name__, template_folder=str(BASE / "web" / "templates"))
+# nginx 反向代理：让 url_root 认得出 https，导出的镜像链接才是 https://…
+from werkzeug.middleware.proxy_fix import ProxyFix  # noqa: E402
+
+app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.secret_key = _ENV.get("SECRET_KEY") or os.urandom(32)
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
@@ -231,21 +235,20 @@ def api_doc_issues():
     return jsonify({"issues": issues, "total": len(issues)})
 
 
-@app.get("/api/issues")
-def api_issues():
-    lang = request.args.get("lang", "")
-    section = request.args.get("section", "")
-    rule = request.args.get("rule", "")
-    sub = request.args.get("sub", "")
-    domain = request.args.get("domain", "")
-    kit = request.args.get("kit", "")
-    kind = request.args.get("kind", "")
-    status = request.args.get("status", "open")
-    q = request.args.get("q", "").strip()
-    dfrom = request.args.get("dfrom", "").strip()
-    dto = request.args.get("dto", "").strip()
-    page = max(1, int(request.args.get("page", 1)))
-    size = min(200, max(5, int(request.args.get("size", 50))))
+def _issue_where() -> tuple[str, list]:
+    """全量问题的筛选条件（列表与导出共用，保证口径一致）。"""
+    a = request.args
+    lang = a.get("lang", "")
+    section = a.get("section", "")
+    rule = a.get("rule", "")
+    sub = a.get("sub", "")
+    domain = a.get("domain", "")
+    kit = a.get("kit", "")
+    kind = a.get("kind", "")
+    status = a.get("status", "open")
+    q = a.get("q", "").strip()
+    dfrom = a.get("dfrom", "").strip()
+    dto = a.get("dto", "").strip()
 
     where, args = ["1=1"], []
     if lang:
@@ -270,7 +273,6 @@ def api_issues():
                          f" FROM doc_cat c WHERE c.lang=? AND c.section=? AND c.{col}=?)")
             args += parts
     if kind in ("api", "guide"):
-        # COUNT 查询没有 join docs，统一用子查询，避免两边 SQL 不一致
         where.append("i.doc_key IN (SELECT doc_key FROM docs WHERE is_api=?)")
         args.append(1 if kind == "api" else 0)
     if status and status != "all":
@@ -282,11 +284,17 @@ def api_issues():
     if q:
         where.append("(i.message LIKE ? OR i.doc_key LIKE ?)")
         args += [f"%{q}%", f"%{q}%"]
-    _fw, _fa = _enabled_filter("i.rule")
-    where.append(_fw)
-    args += _fa
-    w = " AND ".join(where)
+    fw, fa = _enabled_filter("i.rule")
+    where.append(fw)
+    args += fa
+    return " AND ".join(where), args
 
+
+@app.get("/api/issues")
+def api_issues():
+    page = max(1, int(request.args.get("page", 1)))
+    size = min(200, max(5, int(request.args.get("size", 50))))
+    w, args = _issue_where()
     total = conn().execute(f"SELECT COUNT(*) n FROM issues i WHERE {w}", args).fetchone()["n"]
     rows = conn().execute(
         f"""SELECT i.id, i.doc_key, i.lang, i.section, i.rule, i.severity, i.locator, i.message,
@@ -321,6 +329,104 @@ def api_issues():
     return jsonify({"total": total, "page": page, "size": size,
                     "pages": (total + size - 1) // size, "items": items})
 
+
+EXPORT_COLS = [
+    ("问题类型", 18), ("语言", 8), ("板块", 18), ("细分/领域", 22), ("Kit", 24),
+    ("文档类别", 10), ("问题描述", 80), ("原文链接文字", 30), ("原文目标地址", 60),
+    ("镜像文档", 52), ("官网文档", 52), ("状态", 10), ("识别日期", 12),
+    ("最近发现", 20), ("解决时间", 20), ("严重级别", 10), ("文档标识", 46),
+]
+
+
+@app.get("/api/export.xlsx")
+def api_export():
+    """按当前筛选条件导出全部问题（不分页），筛选维度一并作为列。"""
+    import io
+    from datetime import datetime
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
+    w, args = _issue_where()
+    rows = conn().execute(
+        f"""SELECT i.doc_key, i.lang, i.section, i.rule, i.severity, i.locator, i.message,
+                   i.first_seen, i.last_seen, i.status, i.resolved_at,
+                   d.is_api, c.sub, c.domain, c.kit
+            FROM issues i
+            LEFT JOIN docs d ON d.doc_key = i.doc_key
+            LEFT JOIN doc_cat c ON c.lang||'/'||c.section||'/'||c.slug = i.doc_key
+            WHERE {w}
+            ORDER BY CASE i.severity WHEN 'error' THEN 0 WHEN 'warn' THEN 1 ELSE 2 END,
+                     i.rule, i.last_seen DESC, i.id DESC""", args).fetchall()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "全量问题"
+    head_font = Font(bold=True, color="FFFFFF")
+    head_fill = PatternFill("solid", fgColor="4C6EF5")
+    for i, (name, width) in enumerate(EXPORT_COLS, 1):
+        cell = ws.cell(row=1, column=i, value=name)
+        cell.font = head_font
+        cell.fill = head_fill
+        cell.alignment = Alignment(horizontal="center", vertical="center")
+        ws.column_dimensions[get_column_letter(i)].width = width
+    ws.freeze_panes = "A2"
+
+    base = request.url_root.rstrip("/")
+    link_font = Font(color="1155CC", underline="single")
+
+    for r in rows:
+        doc_key = r["doc_key"] or ""
+        parts = doc_key.split("/")
+        slug = parts[-1] if parts else ""
+        loc = {}
+        try:
+            loc = json.loads(r["locator"] or "{}")
+        except Exception:  # noqa: BLE001
+            pass
+        official = (ds_catalog.url_for(r["lang"], r["section"], slug, int(r["is_api"] or 0))
+                    if len(parts) == 3 else "")
+        href, link_text = _link_meta(doc_key, loc)
+        anchor = loc.get("anchorId") or ""
+        mirror = f"{base}/#/{doc_key}" + (f"?id={anchor}" if anchor else "")
+        sub = r["domain"] or r["sub"] or ""
+        ws.append([
+            checks.rule_label(r["rule"]),
+            "中文" if r["lang"] == "cn" else "英文",
+            SECTION_NAMES.get(r["section"], r["section"]),
+            sub,
+            r["kit"] or "",
+            "API参考" if r["is_api"] else ("指南" if r["is_api"] is not None else ""),
+            r["message"] or "",
+            link_text or "",
+            href or "",
+            mirror,
+            official or "已下架",
+            "未解决" if r["status"] == "open" else "已解决",
+            (r["first_seen"] or "")[:10],
+            r["last_seen"] or "",
+            r["resolved_at"] or "",
+            {"error": "错误", "warn": "警告", "info": "提示"}.get(r["severity"], r["severity"]),
+            doc_key,
+        ])
+        row_i = ws.max_row
+        for col_i, val in ((9, href), (10, mirror), (11, official)):
+            if val:
+                c = ws.cell(row=row_i, column=col_i)
+                c.hyperlink = val
+                c.font = link_font
+        for col_i in (7, 8, 9):
+            ws.cell(row=row_i, column=col_i).alignment = Alignment(vertical="top", wrap_text=False)
+
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(EXPORT_COLS))}{ws.max_row}"
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M")
+    name = f"全量问题_{stamp}.xlsx"
+    return send_file(buf, as_attachment=True, download_name=name,
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 def _section_opts(rows):
     """板块下拉用文档侧边栏的板块名（版本说明/工具…），一个板块一项、中英文合并计数。

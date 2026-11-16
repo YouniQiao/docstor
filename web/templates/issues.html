@@ -30,6 +30,8 @@
   input[type=text]{min-width:240px}
   button{border:1px solid var(--border);background:#fff;border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer}
   button:hover{border-color:var(--accent);color:var(--accent)}
+  #f-export{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  #f-export:hover{filter:brightness(1.06);color:#fff}
   table{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--border);border-radius:10px;overflow:hidden;font-size:13px}
   th,td{padding:9px 12px;border-bottom:1px solid #f0f1f3;text-align:left;vertical-align:top}
   th{background:#fafbfc;color:#4b5563;font-weight:600;font-size:12px;white-space:nowrap}
@@ -96,6 +98,7 @@
       <select id="f-rule"><option value="">全部类型</option></select>
       <span style="flex:1"></span>
       <span class="meta" id="count"></span>
+      <button id="f-export" title="按当前筛选导出全部问题（不分页）">导出 Excel</button>
     </div>
     <div class="frow">
       <span class="flabel">问题归属</span>
@@ -322,6 +325,12 @@ document.getElementById('f-kit').addEventListener('change', function(){
 });
 ['f-rule','f-kind','f-status'].forEach(id =>
   document.getElementById(id).addEventListener('change', reload));
+
+document.getElementById('f-export').onclick = () => {
+  const p = new URLSearchParams(query());
+  p.delete('page'); p.delete('size');
+  location.href = '/api/export.xlsx?' + p.toString();
+};
 
 // 识别时间：快捷项直接填日期区间，自定义时手填（两边相同＝单日）
 function ymd(d){ const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
