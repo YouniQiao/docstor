@@ -443,21 +443,49 @@ def check_vintage(doc, ctx):
     return out
 
 
+# 代码仓库地址：路径/锚点里的中文是仓库内容，不属于「链到中文文档站」
+REPO_HOST_RE = re.compile(r"^https?://(?:[^/]+\.)?(?:gitcode|github|gitee)\.(?:com|io)/", re.I)
+
+
 @register("link.cross_lang", label="英文文档链到中文", langs=("en",))
 def check_cross_lang(doc, ctx):
+    """英文文档里链到中文站的内容。
+
+    口径：
+      · 只看「目标文档本身在中文站」（/cn/… 或 /consumer/cn/doc/…）；
+      · 代码仓库（gitcode/github/gitee）里带中文锚点不算，那是仓库 README 的锚点；
+      · 目标是 /en/ 只有锚点含中文 → 不是跨语言，归 link.anchor。
+    """
     out = []
-    for line_no, target, _html in iter_links(ctx.text):
-        if not target:
+    for line_no, target, _text, _html in iter_links(ctx.text):
+        if not target or REPO_HOST_RE.match(target):
             continue
-        bad = False
         reason = ""
-        if "/consumer/cn/doc/" in target or re.match(r"^/cn/", target):
-            bad, reason = True, "链接指向中文站"
-        elif CN_CHAR_RE.search(target) and target.startswith(("http", "/")):
-            bad, reason = True, "链接 URL 含中文字符"
-        if bad:
-            title, aid = ctx.anchor_for_line(line_no)
-            out.append(Issue("link.cross_lang", f"{reason}：{target}",
-                             locator={"line": line_no, "target": target, "anchorId": aid},
-                             anchor_text=title, evidence={"target": target}))
+        m = INTERNAL_RE.match(target)
+        if m:
+            lang, section, slug, _frag = m.groups()
+            if lang != "cn":
+                continue
+            if _target_exists(ctx, "en", section, slug):
+                reason = "链接指向中文站（英文站有同一篇，应改指 /en/…）"
+            else:
+                reason = "链接指向中文站（英文站没有这篇）"
+        elif "/consumer/cn/doc/" in target:
+            mm = re.search(r"/consumer/cn/doc/([^/?#]+)/([^/?#]+)", target)
+            cat, slug = (mm.group(1), mm.group(2)) if mm else ("", "")
+            section = _section_of(cat, "cn") if cat else ""
+            off = _official()
+            v = off.verdict("en", section, slug) if (off and slug) else ""
+            reason = ("链接指向中文站（英文站有同一篇，应改指 /en/…）" if v == "ok"
+                      else "链接指向中文站（英文站没有这篇）")
+        elif re.match(r"^https?://developer\.huawei\.com/consumer/cn/", target):
+            reason = "链接指向中文站页面（非文档，如论坛/下载/活动页）"
+        elif target.startswith(("http", "/")) and CN_CHAR_RE.search(target.split("#")[0]):
+            reason = "链接 URL 含中文字符"
+        if not reason:
+            continue
+        title, aid = ctx.anchor_for_line(line_no)
+        out.append(Issue("link.cross_lang", f"{reason}：{target}",
+                         locator={"line": line_no, "target": target, "anchorId": aid},
+                         anchor_text=title, evidence={"target": target}))
     return out
