@@ -143,6 +143,102 @@ def resolve(lang: str, section: str, slug: str, is_api: int = 0) -> str:
     return ""
 
 
+INDEX_STAMP = BASE / "data" / ".catalog_index_at"
+
+
+def fill_from_index() -> int:
+    """把目录索引里的 (lang, slug) → 目录批量灌进 doc_catalog（纯本地 SQL，很快）。"""
+    db = _db()
+    try:
+        db.execute("CREATE TABLE IF NOT EXISTS catalog_index(lang TEXT, catalog TEXT, slug TEXT)")
+    except sqlite3.Error:
+        return 0
+    # 用 Python 做映射：SQL 关联写 3 万行要两分多钟，这里一秒内
+    have = {(l, s) for l, s in db.execute("SELECT lang, slug FROM doc_catalog")}
+    idx: dict[tuple[str, str], str] = {}
+    any_lang: dict[str, str] = {}
+    for lang, cat, slug in db.execute("SELECT lang, catalog, slug FROM catalog_index"):
+        idx.setdefault((lang, slug), cat)
+        any_lang.setdefault(slug, cat)
+    now = time.strftime("%Y-%m-%d %H:%M:%S")
+    rows = []
+    for lang, slug in db.execute("SELECT lang, slug FROM docs WHERE status='ok'"):
+        if (lang, slug) in have:
+            continue
+        cat = idx.get((lang, slug)) or any_lang.get(slug)
+        if cat:
+            rows.append((lang, slug, cat, now))
+    if rows:
+        db.executemany("INSERT OR IGNORE INTO doc_catalog(lang, slug, catalog, checked_at)"
+                       " VALUES(?,?,?,?)", rows)
+        db.commit()
+    return len(rows)
+
+
+def resolve_missing(limit: int = 800, log=print) -> int:
+    """新抓进来的文档在 doc_catalog 里还没有记录，逐个实测补上。"""
+    import concurrent.futures
+
+    db = _db()
+    rows = db.execute("""SELECT d.lang, d.section, d.slug, COALESCE(d.is_api,0)
+                         FROM docs d
+                         WHERE d.status='ok'
+                           AND NOT EXISTS(SELECT 1 FROM doc_catalog c
+                                          WHERE c.lang=d.lang AND c.slug=d.slug)
+                         LIMIT ?""", (limit,)).fetchall()
+    if not rows:
+        return 0
+    done = 0
+
+    def job(r):
+        return resolve(r[0], r[1], r[2], int(r[3] or 0))
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as ex:
+        for fut in concurrent.futures.as_completed([ex.submit(job, r) for r in rows]):
+            try:
+                if fut.result():
+                    done += 1
+            except Exception:  # noqa: BLE001
+                pass
+    log(f"   目录实测补全 {done}/{len(rows)} 篇")
+    return done
+
+
+def refresh(force: bool = False, log=print) -> dict:
+    """抓取收尾调用：重建目录索引（12 小时内不重复）+ 灌 doc_catalog + 补新文档。
+
+    目录索引决定「官网到底有没有这篇」，新文档/新目录不进来，检查就会
+    误判死链、官网列也会显示「已下架」，所以抓完必须跟上。
+    """
+    import subprocess
+    import sys
+    import time as _t
+
+    out = {"rebuilt": False, "filled": 0, "resolved": 0}
+    stale = True
+    try:
+        if INDEX_STAMP.exists() and not force:
+            stale = (_t.time() - INDEX_STAMP.stat().st_mtime) > 12 * 3600
+    except OSError:
+        stale = True
+    if stale:
+        log("   重建官网目录索引（catalog_index）…")
+        try:
+            r = subprocess.run([sys.executable, str(BASE / "scripts" / "build_catalog_index.py")],
+                               cwd=str(BASE), capture_output=True, text=True, timeout=3600)
+            if r.returncode == 0:
+                INDEX_STAMP.write_text(_t.strftime("%Y-%m-%d %H:%M:%S"))
+                out["rebuilt"] = True
+            else:
+                log(f"   ⚠ 目录索引重建失败：{(r.stderr or '')[-300:]}")
+        except Exception as e:  # noqa: BLE001
+            log(f"   ⚠ 目录索引重建异常：{e}")
+    out["filled"] = fill_from_index()
+    out["resolved"] = resolve_missing(log=log)
+    log(f"   目录索引：新增 {out['filled']} 条映射，实测补全 {out['resolved']} 篇")
+    return out
+
+
 def url_for(lang: str, section: str, slug: str, is_api: int = 0) -> str:
     """官网原文地址：用实测目录，查不到再退回按板块推算。"""
     cat = get(lang, slug)

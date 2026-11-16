@@ -21,3 +21,4 @@ venv/
 .env.*
 .ai.env
 .admin.env
+data/.catalog_index_at

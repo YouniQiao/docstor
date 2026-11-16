@@ -269,6 +269,12 @@ def ingest(args) -> int:
         f"新增数据={stats['bytes']/1048576:.1f}MB 用时={stats['elapsed_s']}s")
     if failures:
         log(f"   失败样例: {failures[:5]}")
+    # 抓完把官网目录索引与「文档→目录」映射跟上，否则新文档会被误判死链/已下架
+    if not getattr(args, "skip_index", False):
+        try:
+            ds_catalog.refresh(log=log)
+        except Exception as e:  # noqa: BLE001
+            log(f"   ⚠ 目录索引刷新失败（不影响本次抓取）：{e}")
     return 0 if stats["fail"] == 0 else 1
 
 
@@ -281,6 +287,7 @@ def main() -> int:
     ap.add_argument("--dry-run", action="store_true", help="只拉目录树 + 写侧边栏")
     ap.add_argument("--sidebar-only", action="store_true", help="按库中节点重建侧边栏")
     ap.add_argument("--only-missing", action="store_true", help="只补抓失败/缺失的文档")
+    ap.add_argument("--skip-index", action="store_true", help="抓完不重建官网目录索引")
     return ingest(ap.parse_args())
 
 
