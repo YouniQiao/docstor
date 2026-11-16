@@ -10,6 +10,7 @@ docs.url 是按「板块 → 目录」推算出来的（ds_db.official_url），
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 import threading
 import time
@@ -92,13 +93,26 @@ PREFIX_CATS = [
 
 
 def _all_catalogs() -> list[str]:
-    """官网目录树里出现过的全部目录名（含 games-guides 等不在 ALL_CATS 里的）。"""
+    """官网目录树里出现过的全部目录名（含 games-guides 等不在 ALL_CATS 里的）。
+
+    额外从 sitemap 里扫目录名：官网新开目录（新站点）时索引可能还没重建，
+    扫一眼 sitemap 就能跟着走，不会把新目录下的页面误标成「已下架」。
+    """
     db = _db()
     try:
         rows = db.execute("SELECT DISTINCT catalog FROM catalog_index").fetchall()
     except sqlite3.Error:
-        return []
-    return [r[0] for r in rows if r[0]]
+        rows = []
+    names = [r[0] for r in rows if r[0]]
+    for lang in ("cn", "en"):
+        sm = BASE / "data" / f"sitemap_doc_{lang}.xml"
+        try:
+            if sm.exists() and sm.stat().st_size > 0:
+                xml = sm.read_text(encoding="utf-8", errors="ignore")
+                names += re.findall(rf"/consumer/{lang}/doc/([^/<]+)/", xml)
+        except OSError:
+            pass
+    return list(dict.fromkeys(names))
 
 
 def resolve(lang: str, section: str, slug: str, is_api: int = 0) -> str:
