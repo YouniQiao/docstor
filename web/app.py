@@ -338,6 +338,20 @@ EXPORT_COLS = [
 ]
 
 
+@app.get("/api/sync-status")
+def api_sync_status():
+    """每日任务的上次运行结果（data/last_sync.json），供页面展示。"""
+    p = BASE / "data" / "last_sync.json"
+    if not p.is_file():
+        return jsonify({"exists": False})
+    try:
+        d = json.loads(p.read_text(encoding="utf-8"))
+    except Exception:  # noqa: BLE001
+        return jsonify({"exists": False})
+    d["exists"] = True
+    return jsonify(d)
+
+
 @app.get("/api/export.xlsx")
 def api_export():
     """按当前筛选条件导出全部问题（不分页），筛选维度一并作为列。"""

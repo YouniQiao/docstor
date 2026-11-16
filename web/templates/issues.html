@@ -98,6 +98,7 @@
       <select id="f-rule"><option value="">全部类型</option></select>
       <span style="flex:1"></span>
       <span class="meta" id="count"></span>
+      <span class="meta" id="last-sync" style="font-size:12px"></span>
       <button id="f-export" title="按当前筛选导出全部问题（不分页）">导出 Excel</button>
     </div>
     <div class="frow">
@@ -325,6 +326,20 @@ document.getElementById('f-kit').addEventListener('change', function(){
 });
 ['f-rule','f-kind','f-status'].forEach(id =>
   document.getElementById(id).addEventListener('change', reload));
+
+// 每日同步：上次跑的时间与结果
+fetch('/api/sync-status').then(r => r.json()).then(d => {
+  if (!d || !d.exists) return;
+  const nf = n => (n == null ? '—' : Number(n).toLocaleString('zh-CN'));
+  const el = document.getElementById('last-sync');
+  const iss = d.issues || {};
+  el.textContent = `上次同步 ${(d.finished_at || '').slice(5, 16)} · 新增 ${nf(iss.new)} / 解决 ${nf(iss.resolved)}`;
+  el.title = `开始 ${d.started_at}\n结束 ${d.finished_at}（${Math.round((d.seconds || 0) / 60)} 分钟）\n` +
+    `文档 ${nf(d.docs && d.docs.before)} → ${nf(d.docs && d.docs.after)}\n` +
+    `未解决 ${nf(iss.open_before)} → ${nf(iss.open_after)}\n` +
+    (d.failed && d.failed.length ? `失败：${d.failed.join('、')}` : '无失败项');
+  if (d.failed && d.failed.length) el.style.color = '#d93025';
+}).catch(() => {});
 
 document.getElementById('f-export').onclick = () => {
   const p = new URLSearchParams(query());
