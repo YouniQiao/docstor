@@ -44,8 +44,8 @@
   #list{overflow-x:auto;-webkit-overflow-scrolling:touch}
   #list table{table-layout:fixed;width:100%;min-width:820px}
   #list td.type{padding-top:9px}
-  #list th.c-type{width:126px} #list th.c-doc{width:80px}
-  #list th.c-off{width:80px} #list th.c-date{width:105px}
+  #list th.c-type{width:126px} #list th.c-doc{width:94px}
+  #list th.c-off{width:94px} #list th.c-date{width:105px}
   #list td.msg{overflow-wrap:anywhere}
   .msg-extra{margin-top:6px}
   .msg-extra .issue-link{color:var(--accent);text-decoration:none;overflow-wrap:anywhere}
@@ -71,7 +71,7 @@
     #list table{min-width:0;font-size:12.5px}
     th,td{padding:8px 8px}
     #list th.c-type{width:96px}
-    #list th.c-doc{width:44px} #list th.c-off{width:50px}
+    #list th.c-doc{width:60px} #list th.c-off{width:64px}
     #list th.c-date,#list td.c-date{display:none}
     .tag{white-space:normal;line-height:1.35}
   }
@@ -273,7 +273,7 @@ async function loadList(){
   else {
     document.getElementById('list').innerHTML = `<table><thead><tr>
       <th class="c-type">类型</th><th>问题</th>
-      <th class="c-doc">文档</th><th class="c-off">官网</th><th class="c-date">识别日期</th></tr></thead><tbody>` +
+      <th class="c-doc">镜像文档</th><th class="c-off">官网文档</th><th class="c-date">识别日期</th></tr></thead><tbody>` +
       d.items.map(it=>{
         const [lang,section,slug] = it.doc_key.split('/');
         const frag = it.anchorId ? '#' + encodeURIComponent(it.anchorId) : '';
