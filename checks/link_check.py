@@ -7,6 +7,7 @@ import re
 import time
 from pathlib import Path
 
+import ds_catalog
 import ds_db
 
 from .base import Issue, register
@@ -105,7 +106,12 @@ def abs_href(target: str) -> str:
     if not m:
         return ""
     lang, section, slug, frag = m.groups()
-    url = ds_db.official_url(lang, section, slug)
+    if section in ds_db.SECTION_CAT:
+        # 我们镜像的板块名 → 按文档实测目录还原（板块 ≠ 官网目录）
+        url = ds_catalog.url_for(lang, section, slug) or ds_db.official_url(lang, section, slug)
+    else:
+        # 这一段本来就是官网目录名（harmonyos-guides-V5、design-guides-V1…），原样还它
+        url = f"https://developer.huawei.com/consumer/{lang}/doc/{section}/{slug}"
     return f"{url}#{frag}" if frag else url
 
 
