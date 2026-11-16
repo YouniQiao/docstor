@@ -64,9 +64,13 @@ def _run(url: str, budget: int = 25000, timeout: int = 150) -> tuple[str, str, i
     title = html.unescape(m.group(1)).strip() if m else ""
     txt = html.unescape(re.sub(r"<[^>]+>", " ", out))
     missing = ("文档不存在" in txt or "页面不存在" in txt or "内容不存在" in txt)
-    core = title.split(" - ")[0].strip()
-    ok = (not missing) and bool(title) and core not in GENERIC and len(out) > 60000
-    return ("ok" if ok else "missing"), title, len(out)
+    core = title.split(" - ")[0].strip().lstrip("🐴 ").strip()
+    # 正文标题：AGC 这类老文档 <title> 停在「文档中心」，只有 h1 是文档名
+    h = re.search(r"<h1[^>]*>(.*?)</h1>", out, re.S)
+    h1 = html.unescape(re.sub(r"<[^>]+>", " ", h.group(1))).strip() if h else ""
+    blank_h1 = not h1 or re.fullmatch(r"404|页?面?不存在|文档不存在|Not Found", h1)
+    ok = (not missing) and not blank_h1 and (core not in GENERIC or len(txt) > 3000)
+    return ("ok" if ok else "missing"), (title or h1), len(out)
 
 
 def check(lang: str, cat: str, slug: str, refresh: bool = False,

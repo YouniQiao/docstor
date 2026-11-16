@@ -28,6 +28,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import checks  # noqa: E402
 import ds_db  # noqa: E402
+import ds_alias  # noqa: E402
+import ds_rules  # noqa: E402
 from checks.base import DocContext  # noqa: E402
 
 BASE = Path(__file__).resolve().parent
@@ -84,10 +86,13 @@ def run(args) -> int:
     ready_sections = {(r["lang"], r["section"]) for r in db.conn.execute(
         "SELECT DISTINCT lang, section FROM docs WHERE status='ok'")}
 
-    rules = [r for r in checks.REGISTRY
-             if checks.applicable(r, args.lang)
-             and (args.rules or checks.REGISTRY[r].get("default_on", True))
-             and (not args.rules or r in args.rules)]
+    if args.rules:  # 命令行显式指定优先，忽略管理页开关
+        rules = [r for r in dict.fromkeys(args.rules)
+                 if r in checks.REGISTRY and checks.applicable(r, args.lang)]
+    else:  # 以管理页配置为准（表里没有的按出厂默认）
+        ds_rules.ensure(db.conn, checks.REGISTRY)
+        rules = [r for r in ds_rules.effective(db.conn, checks.REGISTRY, args.lang)
+                 if checks.applicable(r, args.lang)]
     log(f"🔍 检查 {args.lang}/{args.section}：{len(rows)} 篇，规则 {len(rules)} 个 → {', '.join(rules)}")
 
     run_id = db.start_run("check", f"{args.lang}/{args.section}")
@@ -146,6 +151,10 @@ def run(args) -> int:
              "by_rule": by_rule, "elapsed_s": round(time.time() - t0, 1),
              "failures": failures[:20]}
     db.finish_run(run_id, stats)
+    try:                              # 旧地址→新地址别名表，供镜像站跳转
+        log(f"   🔗 地址别名 {ds_alias.build(db.conn)} 条")
+    except Exception as e:  # noqa: BLE001
+        log(f"   ⚠ 别名表更新失败：{e}")
     db.close()
 
     log(f"\n✅ 检查完成：{len(rows)} 篇，问题 {total_seen}（新增 {total_new}），"

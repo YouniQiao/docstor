@@ -49,6 +49,33 @@ SECTION_CATS = {
 
 MOVE_RE = re.compile(r"(已迁移|已下线|已下架|内容迁移|计划于.{0,8}下架)")
 
+# 查旧地址映射时把所有目录都试一遍：链接里的板块段经常和文档真实目录不一致
+ALL_CATS = list(dict.fromkeys(
+    [c for cats in SECTION_CATS.values() for c in cats]
+    + ["harmonyos-guides", "harmonyos-references", "best-practices", "harmonyos-faqs",
+       "harmonyos-releases", "app", "design-guides", "architecture-guides"]))
+
+
+def _slug_variants(slug: str) -> list[str]:
+    """官网改 slug 的几种常见形态（下划线/连字符互换、加 bpta- 前缀、去掉 -V14 版本后缀）。
+
+    实测：ts-universal-events-focus_axis → …-focus-axis、ide-signing-V14 → ide-signing、
+    multi-mobile-payment → bpta-multi-mobile-payment。旧地址在官网仍能打开。
+    """
+    s = re.sub(r"\.(md|html?|shtml)$", "", slug.strip())       # 相对 .md 链接会带后缀
+    slug = s or slug
+    out = [slug]
+    if slug != slug.lower():
+        out.append(slug.lower())        # 官网 slug 全小写，源码里常写成驼峰
+    if "_" in slug:
+        out.append(slug.replace("_", "-"))
+    if "-" in slug:
+        out.append(slug.replace("-", "_"))
+    out.append("bpta-" + slug)
+    out.append(re.sub(r"-V\d+$", "", slug))
+    out.append(re.sub(r"-0\d{12,}$", "", slug))   # 老式「slug-0000001820881413」数字后缀
+    return list(dict.fromkeys(x for x in out if x))
+
 _SCHEMA = """CREATE TABLE IF NOT EXISTS link_official(
     lang TEXT, section TEXT, slug TEXT,
     verdict TEXT, detail TEXT, checked_at TEXT,
@@ -96,7 +123,9 @@ class Official:
     # ---------- 单次探测 ----------
     def _fetch(self, lang: str, section: str, slug: str) -> tuple[str, str, str]:
         """返回 (verdict, detail, title)。detail 命中时是 catalogName 或新链接。"""
-        for cat in SECTION_CATS.get(section, [section]):
+        cats = SECTION_CATS.get(section, [section])
+        cats = list(cats) + [c for c in ALL_CATS if c not in cats]   # 老板块名（multi-device…）也要能查到
+        for cat in cats:
             try:
                 d = self.api._post("getDocumentById",
                                    {"objectId": slug, "catalogName": cat, "language": lang})
@@ -114,14 +143,47 @@ class Official:
             return "ok", cat, str(v.get("title") or "")
         return "", "", ""
 
-    def _probe(self, lang: str, section: str, slug: str) -> tuple[str, str]:
+    def _mapping(self, lang: str, section: str, slug: str) -> str:
+        """官方的「旧地址 → 新地址」映射（getUrlMapping）。
+
+        文档改过 slug 后，旧地址在官网仍能打开（SPA 会自动跳转），
+        但 getDocumentById 用旧 slug 查不到——这是此前把这类链接误判成死链的根因。
+        """
+        for cat in ALL_CATS:
+            url = f"https://developer.huawei.com/consumer/{lang}/doc/{cat}/{slug}"
+            try:
+                d = self.api._post("getUrlMapping", {"oldUrl": url})
+            except Exception:  # noqa: BLE001
+                continue
+            new = (d.get("newUrl") or "").strip()
+            if new and new.rstrip("/").rsplit("/", 1)[-1] != slug:
+                return new
+        return ""
+
+    def _resolve(self, lang: str, section: str, slug: str) -> tuple[str, str]:
+        """本语言内找这篇：原 slug → slug 变体 → 旧地址映射。返回 (verdict, detail)。"""
         verdict, detail, _title = self._fetch(lang, section, slug)
         if verdict:
             return verdict, detail
-        if lang == "en":                      # 英文站没有 → 看中文站有没有
-            v2, d2, _ = self._fetch("cn", section, slug)
-            if v2:
-                return "cn_only", d2
+        for alt in _slug_variants(slug):
+            if alt == slug:
+                continue
+            v2, cat2, _ = self._fetch(lang, section, alt)
+            if v2 in ("ok", "moved"):
+                return "renamed", f"https://developer.huawei.com/consumer/{lang}/doc/{cat2}/{alt}"
+        new = self._mapping(lang, section, slug)      # 旧地址能自动跳转到新地址 → 不是死链
+        if new:
+            m = re.search(r"/consumer/(cn|en)/doc/", new)
+            if lang == "en" and m and m.group(1) == "cn":
+                return "cn_only", new                 # 英文旧地址被跳去中文页 = 英文缺译
+            return "renamed", new
+        return "", ""
+
+    def _probe(self, lang: str, section: str, slug: str) -> tuple[str, str]:
+        verdict, detail = self._resolve(lang, section, slug)
+        if verdict:
+            return verdict, detail
+        # 英文站查不到就是 404（中文站有没有同篇不影响这个 en 地址打不开），不再降级成 cn_only
         # 接口不通/超时的兜底
         try:
             row = self.db.execute("SELECT 1 FROM catalog_index WHERE lang=? AND slug=? LIMIT 1",
@@ -135,6 +197,7 @@ class Official:
         return "dead", ""
 
     def verdict(self, lang: str, section: str, slug: str, refresh: bool = False) -> str:
+        slug = re.sub(r"\.(md|html?|shtml)$", "", (slug or "").strip())   # 相对 .md 链接带的文件后缀
         db = self.db
         if not refresh:
             row = db.execute("SELECT verdict, checked_at FROM link_official"
