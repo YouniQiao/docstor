@@ -2,31 +2,108 @@
 """docstor Web：docsify 站点 + 问题 API + 全量问题页。"""
 from __future__ import annotations
 
+import hmac
 import json
+import os
 import sys
 from pathlib import Path
 
 import yaml
-from flask import Flask, abort, jsonify, render_template, request, send_from_directory
+from flask import (Flask, abort, jsonify, redirect, render_template, request,
+                   send_from_directory, session, url_for)
 
 BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
 import checks  # noqa: E402
 import ds_db  # noqa: E402
+import ds_alias  # noqa: E402
+import ds_rules  # noqa: E402
+from checks.link_check import abs_href  # noqa: E402
+import checks.link_check as _lc  # noqa: E402
 
 CFG = yaml.safe_load((BASE / "config.yaml").read_text(encoding="utf-8"))
 SITE = BASE / CFG["site"]["output_dir"]
 DB_PATH = BASE / CFG["db"]["path"]
 
+def _load_env(path: Path) -> dict:
+    out = {}
+    if path.exists():
+        for line in path.read_text(encoding="utf-8").splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                out[k.strip()] = v.strip()
+    return out
+
+
+_ENV = _load_env(BASE / ".admin.env")
 app = Flask(__name__, template_folder=str(BASE / "web" / "templates"))
 app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.secret_key = _ENV.get("SECRET_KEY") or os.urandom(32)
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
 
 _db = ds_db.DB(str(DB_PATH))
+ds_rules.ensure(_db.conn, checks.REGISTRY)
+try:                                  # 别名表只在缺失文档时才用到，起不来也不影响主站
+    ds_alias.build(_db.conn)
+except Exception:  # noqa: BLE001
+    pass
 
 
 def conn():
     return _db.conn
+
+
+_MD_LINES: dict = {}
+
+
+def _md_lines(doc_key: str) -> list[str]:
+    """按 doc_key 取 md 源文件行（老问题的 locator 没存链接文字时用它反查）。"""
+    if doc_key in _MD_LINES:
+        return _MD_LINES[doc_key]
+    lines: list[str] = []
+    try:
+        row = conn().execute("SELECT md_path FROM docs WHERE doc_key=?", (doc_key,)).fetchone()
+        if row and row["md_path"] and Path(row["md_path"]).exists():
+            lines = Path(row["md_path"]).read_text(encoding="utf-8", errors="ignore").splitlines()
+    except Exception:  # noqa: BLE001
+        lines = []
+    if len(_MD_LINES) > 300:
+        _MD_LINES.clear()
+    _MD_LINES[doc_key] = lines
+    return lines
+
+
+def _link_meta(doc_key: str, loc: dict) -> tuple[str, str]:
+    """问题里那条链接的「原文地址」和「链接文字」。"""
+    target = loc.get("target") or ""
+    href = loc.get("href") or abs_href(target)
+    text = loc.get("text") or ""
+    if not text and target:
+        line = loc.get("line") or 0
+        lines = _md_lines(doc_key)
+        if 0 < line <= len(lines):
+            for _ln, t2, text2, _h in _lc.iter_links(lines[line - 1]):
+                if t2 == target or t2.split("#")[0] == target.split("#")[0]:
+                    text = text2
+                    break
+    return href, text
+
+
+def is_admin() -> bool:
+    return bool(session.get("admin"))
+
+
+def require_admin(fn):
+    from functools import wraps
+
+    @wraps(fn)
+    def inner(*a, **kw):
+        if not is_admin():
+            return redirect(url_for("admin_page"))
+        return fn(*a, **kw)
+    return inner
 
 
 # ---------------- 静态站点 ----------------
@@ -35,8 +112,37 @@ def index():
     return send_from_directory(SITE, "index.html")
 
 
+def _find_doc_section(lang: str, slug: str) -> str:
+    """在镜像里按 slug 找这篇文档实际所在的板块（跨板块兜底，返回板块名或空串）。"""
+    base = SITE / "docs" / lang
+    try:
+        for d in base.iterdir():
+            if d.is_dir() and (d / f"{slug}.md").exists():
+                return d.name
+    except OSError:
+        return ""
+    return ""
+
+
 @app.route("/docs/<path:fn>")
 def docs(fn):
+    """静态文档由 nginx 直出；只有 404 时（error_page）才进到这里，用于旧地址跳转。"""
+    target = SITE / "docs" / fn
+    if not target.exists() and fn.endswith(".md"):
+        parts = fn[:-3].split("/")
+        if len(parts) == 3:
+            hit = ds_alias.resolve(conn(), *parts,
+                                   exists=lambda rel: (SITE / "docs" / rel).exists())
+            if hit:
+                return redirect(f"/docs/{hit[0]}/{hit[1]}/{hit[2]}.md", code=302)
+        low = (SITE / "docs" / fn.lower())      # 大小写不一致（官网源码里的相对链接常见）
+        if low.exists():
+            return redirect(f"/docs/{fn.lower()}", code=302)
+        if len(parts) == 3:
+            # 老板块名（/cn/games/、/cn/multi-device/ …）：同一篇文档被镜像在别的板块下
+            found = _find_doc_section(parts[0], parts[2])
+            if found:
+                return redirect(f"/docs/{parts[0]}/{found}/{parts[2]}.md", code=302)
     return send_from_directory(SITE / "docs", fn)
 
 
@@ -89,11 +195,14 @@ def api_doc_issues():
             loc = json.loads(r["locator"] or "{}")
         except Exception:  # noqa: BLE001
             pass
+        href, link_text = _link_meta(doc_key, loc)
         issues.append({"rule": r["rule"], "rule_label": checks.rule_label(r["rule"]),
                        "severity": r["severity"], "message": r["message"],
                        "locator": r["locator"],
                        "anchor_text": loc.get("anchor_text", ""),
-                       "anchorId": loc.get("anchorId", "")})
+                       "anchorId": loc.get("anchorId", ""),
+                       "href": href, "link_text": link_text,
+                       "suggest": loc.get("new", "")})
     return jsonify({"issues": issues, "total": len(issues)})
 
 
@@ -164,10 +273,14 @@ def api_issues():
         parts = doc_key.split("/")
         official = r["doc_url"] or (ds_db.official_url(r["lang"], r["section"], parts[-1] or "",
                                                       int(r["is_api"] or 0)) if len(parts) == 3 else "")
+        href, link_text = _link_meta(doc_key, loc)
         items.append({**{k: r[k] for k in r.keys()},
                       "rule_label": checks.rule_label(r["rule"]),
                       "anchor_text": loc.get("anchor_text", ""),
                       "anchorId": loc.get("anchorId", ""),
+                      "href": href,
+                      "link_text": link_text,
+                      "suggest": loc.get("new", ""),
                       "official_url": official})
     return jsonify({"total": total, "page": page, "size": size,
                     "pages": (total + size - 1) // size, "items": items})
@@ -180,7 +293,7 @@ def _section_opts(rows):
     """
     agg: dict[str, int] = {}
     for r in rows:
-        agg[r["section"]] = agg.get(r["section"], 0) + (r["n_all"] or 0)
+        agg[r["section"]] = agg.get(r["section"], 0) + (r["n"] or 0)   # 与列表默认「未解决」一致
     out = [{"section": k, "n": v, "name": SECTION_NAMES.get(k, k)} for k, v in agg.items()]
     out.sort(key=lambda s: SECTION_ORDER.index(s["section"]) if s["section"] in SECTION_ORDER else 99)
     return out
@@ -228,17 +341,28 @@ def _kit_opts():
 
 @app.get("/api/facets")
 def api_facets():
-    by_rule = conn().execute(
+    by_rule = [r for r in conn().execute(
         """SELECT rule, COUNT(*) n_all, SUM(status='open') n FROM issues
-           GROUP BY rule ORDER BY n DESC""").fetchall()
+           GROUP BY rule ORDER BY n DESC""")
+        if r["rule"] in checks.REGISTRY]   # 已下线的规则不再出卡片
     by_lang = conn().execute(
         """SELECT lang, COUNT(*) n FROM issues WHERE status='open' GROUP BY lang""").fetchall()
     by_section = conn().execute(
         """SELECT lang, section, COUNT(*) n_all, SUM(status='open') n FROM issues
            GROUP BY lang, section ORDER BY n DESC""").fetchall()
+    cfg = ds_rules.all_settings(conn())
+
+    def _rule_state(rule):
+        c = cfg.get(rule) or {}
+        meta = checks.REGISTRY.get(rule) or {}
+        return (c.get("enabled", meta.get("default_on", True)),
+                c.get("langs", list(meta.get("langs") or ("cn", "en"))))
+
     return jsonify({
-        "rules": [{"rule": r["rule"], "label": checks.rule_label(r["rule"]),
-                   "n": r["n"], "n_all": r["n_all"]} for r in by_rule],
+        "rules": [dict({"rule": r["rule"], "label": checks.rule_label(r["rule"]),
+                        "n": r["n"], "n_all": r["n_all"]},
+                       enabled=_rule_state(r["rule"])[0],
+                       langs=_rule_state(r["rule"])[1]) for r in by_rule],
         "langs": [{"lang": r["lang"], "n": r["n"]} for r in by_lang],
         "sections": _section_opts(by_section),
         "subs": _sub_opts(),
@@ -265,6 +389,21 @@ SECTION_NAMES_EN = {
 }
 
 _TREE_CACHE: dict = {}
+
+
+@app.get("/api/aliases")
+def api_aliases():
+    """旧 slug → 新 slug（前端打开旧地址时先跳到新地址，锚点才能对得上）。"""
+    try:
+        rows = conn().execute(
+            "SELECT lang, section, old_slug, new_lang, new_section, new_slug FROM slug_alias").fetchall()
+    except Exception:  # noqa: BLE001
+        return jsonify({"aliases": {}})
+    out = {}
+    for r in rows:
+        sec = r["new_section"] or r["section"]
+        out[f"{r['lang']}/{r['section']}/{r['old_slug']}"] = [r["new_lang"], sec, r["new_slug"]]
+    return jsonify({"aliases": out})
 
 
 @app.get("/api/tree")
@@ -319,6 +458,53 @@ def api_tree():
 
 
 # ---------------- 全量问题页 ----------------
+@app.route("/admin", methods=["GET", "POST"])
+def admin_page():
+    err = ""
+    if request.method == "POST":
+        pwd = request.form.get("password", "")
+        if _ENV.get("ADMIN_PASSWORD") and hmac.compare_digest(pwd, _ENV["ADMIN_PASSWORD"]):
+            session["admin"] = True
+            return redirect(url_for("admin_page"))
+        err = "口令不正确"
+    if not is_admin():
+        return render_template("admin.html", authed=False, err=err, rules=[])
+    cfg = ds_rules.all_settings(conn())
+    counts = {r["rule"]: r["n"] for r in conn().execute(
+        "SELECT rule, COUNT(*) n FROM issues WHERE status='open' GROUP BY rule")}
+    rules = []
+    for rule, meta in checks.REGISTRY.items():
+        c = cfg.get(rule) or {}
+        rules.append({"rule": rule, "label": meta["label"],
+                      "severity": meta.get("severity", "warn"),
+                      "enabled": c.get("enabled", meta.get("default_on", True)),
+                      "langs": c.get("langs", list(meta.get("langs") or ("cn", "en"))),
+                      "n": counts.get(rule, 0),
+                      "updated_at": c.get("updated_at", "")})
+    return render_template("admin.html", authed=True, err="", rules=rules)
+
+
+@app.post("/admin/logout")
+def admin_logout():
+    session.pop("admin", None)
+    return redirect(url_for("admin_page"))
+
+
+@app.post("/api/rules/save")
+def api_rules_save():
+    if not is_admin():
+        return jsonify({"ok": False, "error": "未登录"}), 403
+    data = request.get_json(silent=True) or {}
+    payload = {}
+    for rule, val in (data.get("rules") or {}).items():
+        if rule not in checks.REGISTRY:
+            continue
+        langs = [x for x in (val.get("langs") or []) if x in ("cn", "en")]
+        payload[rule] = {"enabled": bool(val.get("enabled")), "langs": langs or ["cn", "en"]}
+    n = ds_rules.save(conn(), payload)
+    return jsonify({"ok": True, "saved": n})
+
+
 @app.get("/issues")
 def issues_page():
     return render_template("issues.html", rule_labels={k: v["label"] for k, v in checks.REGISTRY.items()})

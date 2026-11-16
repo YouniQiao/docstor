@@ -98,6 +98,8 @@ a.ds-btn{text-decoration:none;display:inline-flex;align-items:center;line-height
 .ds-issue:hover{border-color:var(--ds-accent);box-shadow:0 2px 8px rgba(47,111,237,.08)}
 .ds-issue .t{font-size:13px;font-weight:600;color:#2b3240;margin-bottom:4px}
 .ds-issue .m{font-size:12px;color:#57606a;word-break:break-all;line-height:1.6}
+.ds-issue .m a.ds-issue-link{color:var(--ds-accent);text-decoration:none}
+.ds-issue .m a.ds-issue-link:hover{text-decoration:underline}
 .ds-issue .k{display:inline-block;font-size:11px;padding:1px 6px;border-radius:4px;background:#f1f3f6;color:#57606a;margin-right:6px}
 .ds-issue.sev-error .k{background:#fdeaea;color:var(--ds-danger)}
 .ds-issue.sev-warn .k{background:#fdf3e3;color:#b3761f}

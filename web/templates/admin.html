@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>站点管理 · docstor</title>
+<style>
+  :root{--accent:#2a6df4;--border:#e4e7ec;--muted:#687083;--bg:#f6f7f9;--line:#eef0f3}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:#1f2430;font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+  header{display:flex;align-items:center;gap:12px;padding:16px 24px;background:#fff;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5}
+  header h1{font-size:17px;margin:0}
+  header a{color:var(--muted);text-decoration:none;font-size:13px}
+  header a:hover{color:var(--accent)}
+  header .sp{flex:1}
+  .wrap{max-width:1000px;margin:22px auto 60px;padding:0 20px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:16px}
+  .card h2{font-size:15px;margin:0 0 4px}
+  .card .sub{color:var(--muted);font-size:12.5px;margin-bottom:14px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+  th{color:var(--muted);font-weight:500;font-size:12.5px}
+  tr:last-child td{border-bottom:none}
+  .rule{font-family:ui-monospace,Menlo,monospace;color:var(--muted);font-size:12px}
+  .n{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+  .sw{position:relative;display:inline-block;width:40px;height:22px;cursor:pointer}
+  .sw input{opacity:0;width:0;height:0}
+  .sw span{position:absolute;inset:0;background:#d6dae3;border-radius:22px;transition:.15s}
+  .sw span:before{content:"";position:absolute;width:18px;height:18px;left:2px;top:2px;background:#fff;border-radius:50%;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+  .sw input:checked+span{background:var(--accent)}
+  .sw input:checked+span:before{transform:translateX(18px)}
+  .lang{display:inline-flex;gap:10px;color:var(--muted);font-size:12.5px}
+  .lang label{display:inline-flex;align-items:center;gap:4px;cursor:pointer}
+  .off td{color:#9aa3b2}
+  .off .rule{color:#c2c8d2}
+  .login{max-width:360px;margin:80px auto;background:#fff;border:1px solid var(--border);border-radius:12px;padding:26px 24px}
+  .login h1{font-size:16px;margin:0 0 6px}
+  .login p{color:var(--muted);font-size:12.5px;margin:0 0 16px}
+  .login input{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px}
+  .login button{width:100%;margin-top:12px;padding:9px 0;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:14px;cursor:pointer}
+  .err{color:#d92d20;font-size:12.5px;margin-top:8px}
+  .toast{position:fixed;right:22px;bottom:22px;background:#1f2430;color:#fff;padding:9px 14px;border-radius:8px;font-size:13px;opacity:0;transform:translateY(6px);transition:.2s;pointer-events:none}
+  .toast.on{opacity:1;transform:none}
+</style>
+</head>
+<body>
+{% if not authed %}
+<div class="login">
+  <h1>站点管理</h1>
+  <p>设置检查项开关、中英文生效范围。保存后「全量问题」页会按新配置显示。</p>
+  <form method="post">
+    <input type="password" name="password" placeholder="管理口令" autofocus autocomplete="current-password">
+    <button type="submit">进入</button>
+    {% if err %}<div class="err">{{ err }}</div>{% endif %}
+  </form>
+</div>
+{% else %}
+<header>
+  <h1>站点管理</h1>
+  <span class="rule">检查项开关</span>
+  <span class="sp"></span>
+  <a href="/issues">全量问题 →</a>
+  <form method="post" action="/admin/logout" style="margin:0">
+    <button style="border:none;background:none;color:#687083;font-size:13px;cursor:pointer">退出</button>
+  </form>
+</header>
+
+<div class="wrap">
+  <div class="card">
+    <h2>检查项</h2>
+    <div class="sub">关闭的检查项不会再被执行；已有问题保留（可在「全量问题」按类型查看）。改动即时保存。</div>
+    <table>
+      <thead><tr><th style="width:38%">检查项</th><th style="width:90px">开关</th><th style="width:150px">生效语言</th><th class="n" style="width:90px">未解决</th></tr></thead>
+      <tbody>
+      {% for r in rules %}
+        <tr data-rule="{{ r.rule }}" class="{{ '' if r.enabled else 'off' }}">
+          <td>
+            <div>{{ r.label }}</div>
+            <div class="rule">{{ r.rule }}</div>
+          </td>
+          <td>
+            <label class="sw"><input type="checkbox" class="ck" {{ 'checked' if r.enabled }}><span></span></label>
+          </td>
+          <td>
+            <span class="lang">
+              <label><input type="checkbox" class="lg" value="cn" {{ 'checked' if 'cn' in r.langs }}>中文</label>
+              <label><input type="checkbox" class="lg" value="en" {{ 'checked' if 'en' in r.langs }}>英文</label>
+            </span>
+          </td>
+          <td class="n">{{ r.n }}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+const toastEl = document.getElementById('toast');
+let toastTimer = null;
+function toast(msg){
+  toastEl.textContent = msg; toastEl.classList.add('on');
+  clearTimeout(toastTimer); toastTimer = setTimeout(()=>toastEl.classList.remove('on'), 1600);
+}
+
+async function saveRule(tr){
+  const rule = tr.dataset.rule;
+  const enabled = tr.querySelector('.ck').checked;
+  const langs = [...tr.querySelectorAll('.lg')].filter(x=>x.checked).map(x=>x.value);
+  tr.classList.toggle('off', !enabled);
+  const r = await fetch('/api/rules/save', {
+    method:'POST', headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({rules:{ [rule]: {enabled, langs} }})
+  });
+  const d = await r.json().catch(()=>({}));
+  toast(d.ok ? '已保存' : ('保存失败：' + (d.error || r.status)));
+}
+
+document.querySelectorAll('tr[data-rule]').forEach(tr=>{
+  tr.querySelector('.ck').addEventListener('change', ()=>saveRule(tr));
+  tr.querySelectorAll('.lg').forEach(c=>c.addEventListener('change', ()=>saveRule(tr)));
+});
+</script>
+{% endif %}
+</body>
+</html>

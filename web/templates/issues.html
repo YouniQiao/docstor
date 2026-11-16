@@ -15,7 +15,9 @@
   .wrap{max-width:1180px;margin:18px auto;padding:0 20px 60px}
   .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:16px}
   .card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 14px}
+  .card.offcard{opacity:.5}
   .card .n{font-size:22px;font-weight:700}
+  .card .tagoff{display:inline-block;margin-left:6px;padding:0 5px;border:1px solid var(--border);border-radius:4px;font-size:11px;color:var(--muted);vertical-align:2px}
   .card .l{color:var(--muted);font-size:12px;margin-top:2px}
   .filters{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
   select,input[type=text]{border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px;background:#fff;color:#1f2430}
@@ -56,6 +58,7 @@
 <header>
   <h1>全量问题</h1>
   <a href="/">← 返回文档站</a>
+  <a href="/admin">⚙ 站点管理</a>
   <span style="flex:1"></span>
   <span class="meta" id="stamp"></span>
 </header>
@@ -80,8 +83,8 @@
     </select>
     <select id="f-rule"><option value="">全部类型</option></select>
     <select id="f-status">
+      <option value="open" selected>未解决</option>
       <option value="all">全部状态</option>
-      <option value="open">未解决</option>
       <option value="resolved">已解决</option>
     </select>
     <input type="text" id="f-q" placeholder="搜索问题描述 / 文档">
@@ -99,18 +102,25 @@
 const RULE_LABELS = {{ rule_labels|tojson }};
 const state = { page: 1, size: 50, total: 0, pages: 0 };
 
-// 链接类问题：把链接文字做成超链接；图片类问题：直接显示图片
+// 链接类问题：描述后面接「原文链接文字 + 原文地址」的超链接；图片类问题：直接显示图片
 function shortMsg(s){ s = String(s||''); return s.length>110 ? s.slice(0,110)+'…' : s; }
 function locOf(it){ try { return JSON.parse(it.locator||'{}'); } catch(e){ return {}; } }
+// 链接类：把 message 里的目标路径换成原文链接（文字取文档里的锚文本，地址取官网原文地址）
+function msgOf(it){
+  const L = locOf(it), rule = it.rule||'';
+  const msg = String(it.message||'');
+  if (rule.indexOf('link.') !== 0) return esc(msg);
+  const t = L.target || L.url || '';
+  const href = it.href || (/^https?:/i.test(t) ? t : '');
+  if (!href) return esc(msg);
+  const text = it.link_text || t;
+  const i = msg.lastIndexOf('：');
+  const prefix = i > 0 ? msg.slice(0, i + 1) : msg;
+  return esc(prefix) + `<a class="issue-link" href="${esc(href)}" target="_blank" rel="noopener" title="${esc(href)}">${esc(text)}</a>`;
+}
 function extraOf(it, lang, section){
   const L = locOf(it), rule = it.rule||'';
-  if (rule.indexOf('link.') === 0){
-    const t = L.target || L.url || '';
-    if (!t) return '';
-    const href = /^https?:/i.test(t) ? t : (location.origin + '/#' + t);
-    const text = L.anchor_text || t;
-    return `<div class="msg-extra"><a class="issue-link" href="${esc(href)}" target="_blank" rel="noopener" title="${esc(t)}">${esc(text)}</a></div>`;
-  }
+  if (rule.indexOf('link.') === 0) return '';
   if (rule.indexOf('image.') === 0 && L.image){
     const src = '/docs/' + lang + '/' + section + '/' + String(L.image).replace(/^\/+/, '');
     return `<div class="msg-extra"><a href="${esc(src)}" target="_blank" rel="noopener"><img class="thumb" src="${esc(src)}" alt="问题图片" loading="lazy"></a></div>`;
@@ -125,12 +135,14 @@ async function loadFacets(){
   const total = d.langs.reduce((a,b)=>a+b.n,0);
   document.getElementById('cards').innerHTML =
     `<div class="card"><div class="n">${total}</div><div class="l">未解决问题总数</div></div>` +
-    d.rules.map(r=>`<div class="card" data-rule="${r.rule}" style="cursor:pointer"><div class="n">${r.n}</div><div class="l">${esc(r.label)}</div></div>`).join('');
+    d.rules.map(r=>`<div class="card${r.enabled === false ? ' offcard' : ''}" data-rule="${r.rule}" style="cursor:pointer"><div class="n">${r.n}${r.enabled === false ? '<span class="tagoff">已关闭</span>' : ''}</div><div class="l">${esc(r.label)}</div></div>`).join('');
   document.querySelectorAll('#cards .card[data-rule]').forEach(c=>c.onclick=()=>{
-    document.getElementById('f-rule').value=c.dataset.rule; state.page=1; loadList();
+    document.getElementById('f-rule').value=c.dataset.rule;
+      document.getElementById('f-status').value='open';   // 卡片上的数是未解决数，点开就按未解决看
+      state.page=1; loadList();
   });
   const rs = document.getElementById('f-rule');
-  rs.innerHTML = '<option value="">全部类型</option>' + d.rules.map(r=>`<option value="${r.rule}">${esc(r.label)} (${r.n_all})</option>`).join('');
+  rs.innerHTML = '<option value="">全部类型</option>' + d.rules.map(r=>`<option value="${r.rule}">${esc(r.label)} (${r.n})${r.enabled === false ? ' · 已关闭' : ''}</option>`).join('');
   const ss = document.getElementById('f-section');
   ss.innerHTML = '<option value="">全部板块</option>' + d.sections.map(s=>`<option value="${s.section}">${esc(s.name)}（${s.n.toLocaleString()}）</option>`).join('');
   state.facets = d;
@@ -152,7 +164,7 @@ async function loadFacets(){
       list.map(s => {
         const v = `${s.lang}|${s.section}|${s.name}`;
         const label = dup[s.name] > 1 ? `${s.name}（${s.lang === 'en' ? '英文站' : '中文站'}）` : s.name;
-        return `<option value="${esc(v)}"${s.n_all === 0 ? ' class="zero"' : ''}>${esc(label)}（${s.n_all.toLocaleString()}）</option>`;
+        return `<option value="${esc(v)}"${s.n === 0 ? ' class="zero"' : ''}>${esc(label)}（${s.n.toLocaleString()}）</option>`;
       }).join('');
     sel.disabled = !sec || !list.length;
     sel.title = sel.disabled ? '先选板块（该板块无需细分）'
@@ -176,10 +188,10 @@ async function loadFacets(){
     const domName = dom ? dom.split('|')[2] : '';
     const kits = (state.facets && state.facets.kits || [])
       .filter(k => k.section === sec && (!lang || k.lang === lang) && (!domName || k.domain === domName))
-      .sort((a, b) => b.n_all - a.n_all || a.name.localeCompare(b.name));
+      .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
     dl.innerHTML = kits.map(k => {
       state.kitMap[k.name] = `${k.lang}|${k.section}|${k.name}`;
-      return `<option value="${esc(k.name)}">${esc(k.name)}（${k.n_all.toLocaleString()}）</option>`;
+      return `<option value="${esc(k.name)}">${esc(k.name)}（${k.n.toLocaleString()}）</option>`;
     }).join('');
     inp.disabled = !domName || !kits.length;
     inp.value = '';
@@ -220,7 +232,7 @@ async function loadList(){
         const frag = it.anchorId ? '#' + encodeURIComponent(it.anchorId) : '';
         return `<tr>
           <td><span class="tag">${esc(it.rule_label)}</span></td>
-          <td class="msg">${esc(shortMsg(it.message))}${extraOf(it, lang, section)}</td>
+          <td class="msg">${msgOf(it)}${extraOf(it, lang, section)}</td>
           <td class="doc"><a href="/#/${lang}/${section}/${slug}${frag}" target="_blank" rel="noopener"
                  title="${esc(lang + '/' + section + '/' + slug)}">链接</a></td>
           <td class="off">${it.official_url
@@ -261,7 +273,7 @@ document.getElementById('f-reset').onclick=()=>{
   document.getElementById('f-lang').value='';document.getElementById('f-section').value='';
   fillSubs(); document.getElementById('f-sub').value=''; fillKits();
   document.getElementById('f-kind').value='';
-  document.getElementById('f-rule').value='';document.getElementById('f-status').value='all';
+  document.getElementById('f-rule').value='';document.getElementById('f-status').value='open';
   document.getElementById('f-q').value='';state.page=1;loadList();
 };
 document.getElementById('f-q').addEventListener('keydown',e=>{if(e.key==='Enter'){state.page=1;loadList();}});

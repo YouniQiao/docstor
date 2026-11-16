@@ -41,6 +41,28 @@
     state.slug = (parts[2] || '').replace(/\.md$/, '');
   }
 
+  var aliases = null;              // 旧 slug → [new_lang, new_section, new_slug]
+  var aliasDone = {};              // 防重定向环
+
+  function loadAliases() {
+    if (aliases) return Promise.resolve(aliases);
+    return fetchJSON(API + '/aliases').then(function (d) {
+      aliases = (d && d.aliases) || {};
+      return aliases;
+    }).catch(function () { aliases = {}; return aliases; });
+  }
+
+  function maybeAliasRedirect() {
+    if (!aliases || !state.slug) return false;
+    var key = state.lang + '/' + state.section + '/' + state.slug;
+    var to = aliases[key];
+    if (!to || aliasDone[key]) return false;
+    aliasDone[key] = 1;
+    var qs = location.hash.indexOf('?') >= 0 ? location.hash.slice(location.hash.indexOf('?')) : '';
+    location.replace('#/' + to[0] + '/' + to[1] + '/' + to[2] + qs);
+    return true;
+  }
+
   function fetchJSON(url) {
     return fetch(url, { credentials: 'same-origin' }).then(function (r) {
       if (!r.ok) throw new Error(r.status);
@@ -604,30 +626,69 @@
     body.innerHTML = list.map(function (i, idx) {
       return '<div class="ds-issue sev-' + esc(i.severity) + '" data-i="' + idx + '">' +
         '<div class="t"><span class="k">' + esc(i.rule_label || i.rule) + '</span>' + esc(i.anchor_text || '页面级') + '</div>' +
-        '<div class="m">' + esc(i.message) + '</div></div>';
+        '<div class="m">' + issueMsg(i) + '</div></div>';
     }).join('');
     body.querySelectorAll('.ds-issue').forEach(function (el) {
-      el.onclick = function () { jumpTo(list[+el.dataset.i]); };
+      el.onclick = function (ev) {
+        if (ev.target.closest && ev.target.closest('a')) return;   // 点链接本身直接开官网
+        jumpTo(list[+el.dataset.i]);
+      };
     });
+  }
+
+  // 链接类问题：描述后面接「原文链接文字 + 原文地址」的超链接，与全量问题页一致
+  function issueMsg(i) {
+    var msg = String(i.message || '');
+    if (!i.rule || i.rule.indexOf('link.') !== 0) return esc(msg);
+    var loc = {};
+    try { loc = JSON.parse(i.locator || '{}'); } catch (e) { /* ignore */ }
+    var href = i.href || '', text = i.link_text || loc.target || '';
+    if (!href) return esc(msg);
+    var k = msg.lastIndexOf('：');
+    var prefix = k > 0 ? msg.slice(0, k + 1) : msg;
+    return esc(prefix) + '<a class="ds-issue-link" href="' + esc(href) +
+      '" target="_blank" rel="noopener" title="' + esc(href) + '">' + esc(text) + '</a>';
+  }
+
+  // 优先跳到正文里那条链接本身，找不到再退到所在小节
+  function normHref(h) {                       // docsify 会把站内链接改写成 #/<lang>/<sec>/<slug>?id=<锚点>
+    return String(h || '').replace(/^#?\/*/, '/').split('?')[0].split('#')[0];
+  }
+
+  function findLinkEl(target) {
+    var host = document.querySelector('.markdown-section') || document.body;
+    var links = host.querySelectorAll('a[href]'), base = normHref(target);
+    var frag = (target.split('#')[1] || '');
+    var fallback = null;
+    for (var i = 0; i < links.length; i++) {
+      var h = links[i].getAttribute('href') || '';
+      if (normHref(h) !== base) continue;
+      if (!frag || h.indexOf(frag) >= 0) return links[i];   // 锚点也对得上就是它
+      if (!fallback) fallback = links[i];
+    }
+    return fallback;
   }
 
   function jumpTo(issue) {
     var loc = {};
     try { loc = JSON.parse(issue.locator || '{}'); } catch (e) { /* ignore */ }
-    var target = loc.anchorId ? document.getElementById(loc.anchorId) : null;
-    if (target) {
-      target.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      target.classList.add('ds-flash');
-      setTimeout(function () { target.classList.remove('ds-flash'); }, 1800);
-    }
+    var el = loc.target ? findLinkEl(loc.target) : null;
+    if (!el && loc.anchorId) el = document.getElementById(loc.anchorId);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.add('ds-flash');
+    setTimeout(function () { el.classList.remove('ds-flash'); }, 1800);
   }
 
   /* ---------- 生命周期 ---------- */
+  loadAliases();                      // 提前拉别名表，首屏就位
+
   var plugin = function (hook) {
     window.__ds_hook = hook;
     hook.doneEach(function () {
       window.__ds_done = (window.__ds_done || 0) + 1;
       parseRoute();
+      if (maybeAliasRedirect()) return;   // 旧 slug 先跳到新 slug，锚点才对得上
       if (state.slug) document.title = decodeURI(state.slug) + ' · docstor';
 
       loadTree().then(function () {
