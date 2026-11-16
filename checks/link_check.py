@@ -19,6 +19,10 @@ INTERNAL_RE = re.compile(r"^/(cn|en)/([A-Za-z0-9_\-]+)/([A-Za-z0-9_.\-]+)(?:#(.*
 REL_MD_RE = re.compile(r"^(?!https?:|/|#|mailto:|javascript:)([^)\s]+?\.md)(#[^\s]*)?$")
 VINTAGE_RE = re.compile(r"-V\d{1,3}(?:/|$)|/doc/harmonyos-[a-z]+-V\d", re.I)
 # 绝对地址指向官网文档中心的链接：SPA 对不存在的页面同样回 200，必须走内容接口
+# 文档里的占位地址：IANA 保留域名、本机地址——点开就是示例页，不算死链
+PLACEHOLDER_RE = re.compile(
+    r"^https?://(?:[^/]+\.)?(?:example\.com|example\.org|example\.net|localhost|127\.0\.0\.1)(?:[:/]|$)",
+    re.I)
 OFFICIAL_RE = re.compile(
     r"^https?://developer\.huawei\.com/consumer/(cn|en)/doc/([A-Za-z0-9_\-]+)/([A-Za-z0-9_.\-]+?)(?:[#?].*)?$")
 CN_CHAR_RE = re.compile(r"[\u4e00-\u9fff]")
@@ -277,6 +281,8 @@ def check_external(doc, ctx):
         title, aid = ctx.anchor_for_line(line_no)
         loc = {"line": line_no, "target": target, "anchorId": aid,
                "text": text, "href": abs_href(target)}
+        if PLACEHOLDER_RE.match(url):
+            continue                        # 文档里的占位域名（example.com 等），不是真链接
         m = OFFICIAL_RE.match(url)
         if m:                               # 官网文档中心的绝对地址：按内容接口判，不看 HTTP 码
             lang, cat, slug = m.groups()
