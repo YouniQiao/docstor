@@ -28,14 +28,24 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS doc_catalog(
     PRIMARY KEY(lang, slug))"""
 
 _local = threading.local()
+_put_fail = 0  # 缓存写失败次数（仅统计，不影响抓取）
 
 
 def _db() -> sqlite3.Connection:
+    """每线程一个连接：WAL + 自动提交 + 30s 忙等。
+
+    自动提交很关键：以前留过未提交的写事务（如 _from_index 里的 CREATE TABLE），
+    该线程就一直持有写锁，其它线程 put() 提交时撞上「database is locked」
+    直接让整个板块抓取崩掉（cn/getting-started 就是这么挂的）。
+    """
     conn = getattr(_local, "conn", None)
     if conn is None:
-        conn = sqlite3.connect(str(DB), timeout=30)
-        conn.execute(SCHEMA)
-        conn.commit()
+        conn = sqlite3.connect(str(DB), timeout=30, isolation_level=None)
+        # 注意：不要在这里执行 PRAGMA journal_mode=WAL —— 它每次都要拿库级独占锁，
+        # 几十个线程各建一次连接会把整批抓取拖到 2 篇/s，并频繁报 database is locked。
+        # 库本身已经是 WAL（ds_db 建库时设的），这里只需设置忙等。
+        conn.execute("PRAGMA busy_timeout=30000")
+        conn.executescript(SCHEMA)
         _local.conn = conn
     return conn
 
@@ -63,10 +73,26 @@ def get(lang: str, slug: str) -> str | None:
 
 
 def put(lang: str, slug: str, catalog: str) -> None:
+    """写缓存；并发下遇到锁就退避重试，不把整批抓取带崩。"""
     db = _db()
-    db.execute("INSERT OR REPLACE INTO doc_catalog(lang,slug,catalog,checked_at) VALUES(?,?,?,?)",
-               (lang, slug, catalog, time.strftime("%Y-%m-%d %H:%M:%S")))
-    db.commit()
+    sql = "INSERT OR REPLACE INTO doc_catalog(lang,slug,catalog,checked_at) VALUES(?,?,?,?)"
+    args = (lang, slug, catalog, time.strftime("%Y-%m-%d %H:%M:%S"))
+    for attempt in range(4):
+        try:
+            db.execute(sql, args)
+            return
+        except sqlite3.OperationalError as e:  # database is locked / busy
+            if "lock" not in str(e).lower() and "busy" not in str(e).lower():
+                raise
+            if attempt == 3:
+                # 这里只是「目录名」缓存，写不进去不影响本次抓取结果（调用方已拿到
+                # 算好的 catalog），绝不能因为缓存写失败把整批抓取带崩。
+                global _put_fail
+                _put_fail += 1
+                if _put_fail <= 3:
+                    print(f"   ⚠ doc_catalog 缓存写入失败（跳过）：{lang}/{slug} — {e}", flush=True)
+                return
+            time.sleep(0.3 * (attempt + 1))
 
 
 def _from_index(lang: str, slug: str) -> str:

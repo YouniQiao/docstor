@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import sqlite3
 import subprocess
@@ -27,6 +28,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent.parent
 DB = BASE / "data" / "docstor.db"
 LAST = BASE / "data" / "last_sync.json"
+LOCK = BASE / "data" / ".daily_sync.lock"
 LOGDIR = BASE / "logs" / "daily"
 
 SECTIONS = {
@@ -84,6 +86,17 @@ def main() -> int:
     ap.add_argument("--workers", type=int, default=8, help="检查并发")
     ap.add_argument("--new-docs-only", action="store_true", help="兼容旧参数，无作用")
     args = ap.parse_args()
+
+    # 单实例锁：cron 与手动补跑撞车时会互相抢 SQLite 写锁，
+    # 两边都崩（历史上 cn/getting-started 连续失败就是这么来的）。
+    lock_fp = open(LOCK, "w")
+    try:
+        fcntl.flock(lock_fp, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        log("⚠️  已有同步任务在跑，本次退出")
+        return 2
+    lock_fp.write(f"{datetime.now():%Y-%m-%d %H:%M:%S} pid={__import__('os').getpid()}\n")
+    lock_fp.flush()
 
     langs = args.lang or ["cn", "en"]
     stamp = datetime.now().strftime("%Y%m%d_%H%M")
