@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import urllib.parse
 import time
 from pathlib import Path
 
@@ -48,28 +49,31 @@ def _session() -> requests.Session:
     return s
 
 
+BLOCK_CODES = {400, 401, 403, 405, 406, 407, 429, 451, 567}   # 反爬 / WAF / 需登录 / 不支持 HEAD
+
+
 def _probe(url: str) -> tuple[int, str, str]:
     s = _session()
+    u = urllib.parse.quote(url, safe=":/?#[]@!$&'()*,;=%~")     # 中文/空格链接别直接发
     for method in ("head", "get"):
         try:
-            kw = {"timeout": 12, "allow_redirects": True}
+            kw = {"timeout": 15, "allow_redirects": True}
             if method == "get":
                 kw["stream"] = True
-            r = getattr(s, method)(url, **kw)
+            r = getattr(s, method)(u, **kw)
             if method == "get":
                 r.close()
-            if r.status_code in (403, 405, 501) and method == "head":
-                continue
+            if method == "head" and (r.status_code in BLOCK_CODES or r.status_code >= 400):
+                continue          # HEAD 被拦或不支持，换 GET 再确认
             return r.status_code, r.url or url, ""
         except requests.exceptions.SSLError:
             return 0, url, "ssl"
         except requests.exceptions.Timeout:
             return 0, url, "timeout"
         except Exception as e:  # noqa: BLE001
-            err = type(e).__name__
             if method == "head":
                 continue
-            return 0, url, err
+            return 0, url, f"{type(e).__name__}: {str(e)[:120]}"
     return 0, url, "blocked"
 
 
@@ -92,11 +96,19 @@ def status(url: str, refresh: bool = False) -> tuple[int, str, str]:
     return st, final, err
 
 
+DNS_HINTS = ("nameresolution", "getaddrinfo", "name or service not known",
+             "nodename nor servname", "no address associated", "temporary failure in name resolution")
+
+
 def verdict(st: int, err: str) -> str:
+    """dead = 真失效（404/410、域名解析不了）；blocked = 反爬/需登录/临时故障，不报问题。"""
     if st in (404, 410):
         return "dead"
-    if st == 0 or st in (401, 403, 429) or st >= 500:
-        return "unreachable"
+    if st == 0:
+        e = (err or "").lower()
+        return "dead" if any(h in e for h in DNS_HINTS) else "blocked"
+    if st in BLOCK_CODES or st >= 500:
+        return "blocked"
     return "ok"
 
 

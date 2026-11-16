@@ -18,6 +18,9 @@ INTERNAL_RE = re.compile(r"^/(cn|en)/([A-Za-z0-9_\-]+)/([A-Za-z0-9_.\-]+)(?:#(.*
 # 相对路径的 *.md 链接（如 `arkts-apis-image-PixelMap.md#release7`），docsify 会拼成同板块路由
 REL_MD_RE = re.compile(r"^(?!https?:|/|#|mailto:|javascript:)([^)\s]+?\.md)(#[^\s]*)?$")
 VINTAGE_RE = re.compile(r"-V\d{1,3}(?:/|$)|/doc/harmonyos-[a-z]+-V\d", re.I)
+# 绝对地址指向官网文档中心的链接：SPA 对不存在的页面同样回 200，必须走内容接口
+OFFICIAL_RE = re.compile(
+    r"^https?://developer\.huawei\.com/consumer/(cn|en)/doc/([A-Za-z0-9_\-]+)/([A-Za-z0-9_.\-]+?)(?:[#?].*)?$")
 CN_CHAR_RE = re.compile(r"[\u4e00-\u9fff]")
 
 LINE_SKIP = ("```",)
@@ -84,6 +87,15 @@ def abs_href(target: str) -> str:
 
 def _docs_root(ctx) -> Path:
     return Path(ctx.md_path).parent.parent.parent  # site/docs
+
+
+def _section_of(cat: str, lang: str) -> str:
+    """官网目录名 → 我们镜像里的板块名（查不到就用目录名本身）。"""
+    try:
+        import ds_alias
+        return ds_alias.cat_section(cat, cat) or cat
+    except Exception:      # noqa: BLE001
+        return cat
 
 
 def _section_ready(ctx, lang: str, section: str) -> bool:
@@ -247,25 +259,33 @@ def check_external(doc, ctx):
         if url in seen:                     # 同篇同链接只报一次
             continue
         seen.add(url)
+        title, aid = ctx.anchor_for_line(line_no)
+        loc = {"line": line_no, "target": target, "anchorId": aid,
+               "text": text, "href": abs_href(target)}
+        m = OFFICIAL_RE.match(url)
+        if m:                               # 官网文档中心的绝对地址：按内容接口判，不看 HTTP 码
+            lang, cat, slug = m.groups()
+            if slug.endswith(".md"):
+                slug = slug[:-3]
+            if slug.endswith(".html"):
+                slug = slug[:-5]
+            section = _section_of(cat, lang)
+            off = _official()
+            v = off.verdict(lang, section, slug) if off else "ok"
+            if v in ("dead", "cn_only") and not _render_says_ok(lang, section, slug):
+                out.append(Issue("link.external", f"外链失效（官网已无此文档）：{url}",
+                                 severity="error", locator=loc, anchor_text=title,
+                                 evidence={"target": url, "status": 0, "verdict": v}))
+            continue
         try:
             st, _final, err = ds_http.status(url)
         except Exception:  # noqa: BLE001
             continue
-        v = ds_http.verdict(st, err)
-        if v == "ok":
-            continue
-        title, aid = ctx.anchor_for_line(line_no)
-        loc = {"line": line_no, "target": target, "anchorId": aid,
-               "text": text, "href": abs_href(target)}
-        if v == "dead":
-            out.append(Issue("link.external", f"外链失效（HTTP {st}）：{url}",
-                             severity="error", locator=loc, anchor_text=title,
-                             evidence={"target": url, "status": st}))
-        else:
-            out.append(Issue("link.external",
-                             f"外链打不开（{err or ('HTTP ' + str(st))}，可能是反爬/临时故障）：{url}",
-                             severity="info", locator=loc, anchor_text=title,
-                             evidence={"target": url, "status": st, "err": err}))
+        if ds_http.verdict(st, err) != "dead":
+            continue                        # 反爬/需登录/临时故障一律不报
+        out.append(Issue("link.external", f"外链失效（HTTP {st}）：{url}",
+                         severity="error", locator=loc, anchor_text=title,
+                         evidence={"target": url, "status": st, "err": err}))
     return out
 
 
