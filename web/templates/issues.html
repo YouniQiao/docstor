@@ -19,7 +19,13 @@
   .card .n{font-size:22px;font-weight:700}
   .card .tagoff{display:inline-block;margin-left:6px;padding:0 5px;border:1px solid var(--border);border-radius:4px;font-size:11px;color:var(--muted);vertical-align:2px}
   .card .l{color:var(--muted);font-size:12px;margin-top:2px}
-  .filters{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 14px;display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:14px}
+  .filters{background:#fff;border:1px solid var(--border);border-radius:10px;padding:6px 14px 10px;margin-bottom:14px}
+  .frow{position:relative;display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:7px 0 7px 76px;border-bottom:1px solid #f4f5f7;min-height:34px}
+  .frow:last-child{border-bottom:0}
+  .flabel{position:absolute;left:0;top:50%;transform:translateY(-50%);width:68px;color:#6b7280;font-size:12.5px;font-weight:600;letter-spacing:.5px}
+  .range{display:none;align-items:center;gap:6px}
+  input[type=date]{border:1px solid var(--border);border-radius:8px;padding:5px 8px;font-size:12.5px;color:#1f2430;background:#fff}
+  input[type=date]:disabled{background:#f7f8fa;color:#9aa3b2}
   select,input[type=text]{border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px;background:#fff;color:#1f2430}
   input[type=text]{min-width:240px}
   button{border:1px solid var(--border);background:#fff;border-radius:8px;padding:6px 12px;font-size:13px;cursor:pointer}
@@ -58,6 +64,10 @@
   .pager button[disabled]{opacity:.45;cursor:not-allowed}
   @media (max-width:720px){
     .wrap{padding:0 12px 40px}
+    .frow{gap:8px;padding:8px 0}
+    .flabel{position:static;transform:none;width:100%;margin-bottom:2px}
+    input[type=text],select{max-width:100%}
+    input[type=text]{min-width:0}
     #list table{min-width:0;font-size:12.5px}
     th,td{padding:8px 8px}
     #list th.c-type{width:96px}
@@ -81,31 +91,52 @@
   <div class="cards" id="cards"></div>
 
   <div class="filters">
-    <select id="f-lang">
-      <option value="">全部语言</option>
-      <option value="cn">中文</option>
-      <option value="en">英文</option>
-    </select>
-    <select id="f-section"><option value="">全部板块</option></select>
-    <select id="f-sub" disabled title="先选板块"><option value="">全部细分</option></select>
-    <input type="text" id="f-kit" list="kit-list" placeholder="全部 Kit" autocomplete="off" disabled>
-    <datalist id="kit-list"></datalist>
-    <select id="f-kind" disabled title="仅「指南与API参考」可用">
-      <option value="">指南+API参考</option>
-      <option value="guide">仅指南</option>
-      <option value="api">仅 API 参考</option>
-    </select>
-    <select id="f-rule"><option value="">全部类型</option></select>
-    <select id="f-status">
-      <option value="open" selected>未解决</option>
-      <option value="all">全部状态</option>
-      <option value="resolved">已解决</option>
-    </select>
-    <input type="text" id="f-q" placeholder="搜索问题描述 / 文档">
-    <button id="f-apply">筛选</button>
-    <button id="f-reset">重置</button>
-    <span style="flex:1"></span>
-    <span class="meta" id="count"></span>
+    <div class="frow">
+      <span class="flabel">问题类型</span>
+      <select id="f-rule"><option value="">全部类型</option></select>
+      <span style="flex:1"></span>
+      <span class="meta" id="count"></span>
+    </div>
+    <div class="frow">
+      <span class="flabel">问题归属</span>
+      <select id="f-lang">
+        <option value="">全部语言</option>
+        <option value="cn">中文</option>
+        <option value="en">英文</option>
+      </select>
+      <select id="f-section"><option value="">全部板块</option></select>
+      <select id="f-sub" disabled title="先选板块"><option value="">全部细分</option></select>
+      <input type="text" id="f-kit" list="kit-list" placeholder="全部 Kit" autocomplete="off" disabled>
+      <datalist id="kit-list"></datalist>
+      <select id="f-kind" disabled title="仅「指南与API参考」可用">
+        <option value="">指南+API参考</option>
+        <option value="guide">仅指南</option>
+        <option value="api">仅 API 参考</option>
+      </select>
+    </div>
+    <div class="frow">
+      <span class="flabel">问题状态</span>
+      <select id="f-status">
+        <option value="open" selected>未解决</option>
+        <option value="all">全部状态</option>
+        <option value="resolved">已解决</option>
+      </select>
+    </div>
+    <div class="frow">
+      <span class="flabel">识别时间</span>
+      <select id="f-when">
+        <option value="">全部时间</option>
+        <option value="today">今天</option>
+        <option value="7d">近 7 天</option>
+        <option value="30d">近 30 天</option>
+        <option value="custom">自定义</option>
+      </select>
+      <span class="range" id="f-range">
+        <input type="date" id="f-d1" title="起始日（只填左边＝该日及以后）">
+        <span class="meta">至</span>
+        <input type="date" id="f-d2" title="结束日（只填右边＝该日及以前；两边相同＝单日）">
+      </span>
+    </div>
   </div>
 
   <div id="list"></div>
@@ -220,7 +251,6 @@ function query(){
   const sub = document.getElementById('f-sub').value;
   const kitName = document.getElementById('f-kit').value.trim();
   const kind = document.getElementById('f-kind').value;
-  const q = document.getElementById('f-q').value.trim();
   if (lang) p.set('lang', lang);
   if (sec) p.set('section', sec);
   if (rule) p.set('rule', rule);
@@ -228,7 +258,10 @@ function query(){
   const kitVal = kitName && state.kitMap ? state.kitMap[kitName] : '';
   if (kitVal) p.set('kit', kitVal);
   if (kind) p.set('kind', kind);
-  if (q) p.set('q', q);
+  const d1 = document.getElementById('f-d1').value;
+  const d2 = document.getElementById('f-d2').value;
+  if (d1) p.set('dfrom', d1);
+  if (d2) p.set('dto', d2);
   return p.toString();
 }
 
@@ -273,25 +306,42 @@ function renderPager(){
   document.querySelectorAll('#pager button').forEach(b=>b.onclick=()=>{state.page=+b.dataset.p;loadList();window.scrollTo({top:0,behavior:'smooth'});});
 }
 
+function reload(){ state.page = 1; loadList(); }
+
 ['f-section','f-lang'].forEach(id => document.getElementById(id)
-  .addEventListener('change', () => { document.getElementById('f-sub').value=''; fillSubs(); }));
+  .addEventListener('change', () => { document.getElementById('f-sub').value=''; fillSubs(); reload(); }));
 document.getElementById('f-sub').addEventListener('change', () => {
   fillKits();
   if (document.getElementById('f-sub').value) document.getElementById('f-kit').value = '';
+  reload();
 });
 // 输入不在候选里的 Kit 就清空，避免带着无效值去筛
 document.getElementById('f-kit').addEventListener('change', function(){
   if (this.value && !(state.kitMap || {})[this.value]) this.value = '';
+  reload();
 });
-document.getElementById('f-apply').onclick=()=>{state.page=1;loadList();};
-document.getElementById('f-reset').onclick=()=>{
-  document.getElementById('f-lang').value='';document.getElementById('f-section').value='';
-  fillSubs(); document.getElementById('f-sub').value=''; fillKits();
-  document.getElementById('f-kind').value='';
-  document.getElementById('f-rule').value='';document.getElementById('f-status').value='open';
-  document.getElementById('f-q').value='';state.page=1;loadList();
-};
-document.getElementById('f-q').addEventListener('keydown',e=>{if(e.key==='Enter'){state.page=1;loadList();}});
+['f-rule','f-kind','f-status'].forEach(id =>
+  document.getElementById(id).addEventListener('change', reload));
+
+// 识别时间：快捷项直接填日期区间，自定义时手填（两边相同＝单日）
+function ymd(d){ const p=n=>String(n).padStart(2,'0'); return d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate()); }
+function applyWhen(){
+  const w = document.getElementById('f-when').value;
+  const d1 = document.getElementById('f-d1'), d2 = document.getElementById('f-d2');
+  const now = new Date(), t = ymd(now);
+  const back = n => { const s = new Date(now); s.setDate(s.getDate() - n); return ymd(s); };
+  if (w === 'today'){ d1.value = t; d2.value = t; }
+  else if (w === '7d'){ d1.value = back(6); d2.value = t; }
+  else if (w === '30d'){ d1.value = back(29); d2.value = t; }
+  else if (w === ''){ d1.value = ''; d2.value = ''; }
+  const custom = (w === 'custom');
+  d1.disabled = !custom; d2.disabled = !custom;
+  document.getElementById('f-range').style.display = (w === '') ? 'none' : 'inline-flex';
+  if (w === '') document.getElementById('f-range').style.display = 'none';
+  reload();
+}
+document.getElementById('f-when').addEventListener('change', applyWhen);
+['f-d1','f-d2'].forEach(id => document.getElementById(id).addEventListener('change', reload));
 
 // 支持 /issues?lang=en&rule=... 直达（英文页顶栏「All issues」会带 lang 参数）。
 // 必须等 loadFacets() 把「板块 / 类型」两个下拉填充完再回填，否则设了值也会被重建的 option 冲掉。
@@ -306,7 +356,7 @@ function applyQuery(){
   const kitQ = q.get('kit');
   if (kitQ) { const nm = kitQ.split('|')[2]; if ((state.kitMap || {})[nm]) document.getElementById('f-kit').value = nm; }
   set('f-kind', q.get('kind'));
-  set('f-q', q.get('q')); set('f-status', q.get('status'));
+  set('f-status', q.get('status'));
 }
 
 document.getElementById('stamp').textContent = '更新于 ' + new Date().toLocaleString('zh-CN');

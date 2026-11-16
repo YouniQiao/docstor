@@ -5,6 +5,7 @@ from __future__ import annotations
 import hmac
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -241,6 +242,8 @@ def api_issues():
     kind = request.args.get("kind", "")
     status = request.args.get("status", "open")
     q = request.args.get("q", "").strip()
+    dfrom = request.args.get("dfrom", "").strip()
+    dto = request.args.get("dto", "").strip()
     page = max(1, int(request.args.get("page", 1)))
     size = min(200, max(5, int(request.args.get("size", 50))))
 
@@ -272,6 +275,10 @@ def api_issues():
         args.append(1 if kind == "api" else 0)
     if status and status != "all":
         where.append("i.status=?"); args.append(status)
+    for val, op in ((dfrom, ">="), (dto, "<=")):
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", val or ""):
+            where.append(f"date(i.first_seen) {op} ?")
+            args.append(val)
     if q:
         where.append("(i.message LIKE ? OR i.doc_key LIKE ?)")
         args += [f"%{q}%", f"%{q}%"]
