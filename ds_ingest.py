@@ -28,6 +28,7 @@ import ds_api
 import ds_catalog
 import ds_convert
 import ds_db
+import ds_render
 
 BASE = Path(__file__).resolve().parent
 
@@ -336,10 +337,21 @@ def ingest(args) -> int:
     if not args.limit and not getattr(args, "only_missing", False) and uniq:
         cur_slugs = {n["slug"] for n in uniq}
         rows = db.conn.execute(
-            "SELECT doc_key, slug, title FROM docs WHERE lang=? AND section=? AND status='ok'",
+            "SELECT doc_key, slug, title, url FROM docs"
+            " WHERE lang=? AND section=? AND status='ok'",
             (lang, section)).fetchall()
-        gone = [r for r in rows if r["slug"] not in cur_slugs]
+        candidates = [r for r in rows if r["slug"] not in cur_slugs]
         limit_ = max(50, int(len(rows) * 0.05))
+        # 目录树里没有 ≠ 文档没了：官网常把页面从导航里撤掉但页面仍可访问
+        # （「去入口、留页面」）。删文件之前必须逐篇确认真渲染打不开，
+        # 否则会把还能打开的文档当成撤稿删掉（2026-11-16 误删 10 篇即此因）。
+        gone, kept = [], []
+        for r in candidates:
+            verdict = ds_render.check_url(r["url"], refresh=False) if r["url"] else "missing"
+            (kept if verdict != "missing" else gone).append(r)
+        if kept:
+            log(f"   ⓘ {len(kept)} 篇已从官网目录树撤下但页面仍能打开，保留镜像不删"
+                f"（{', '.join(k['slug'] for k in kept[:3])}{' …' if len(kept) > 3 else ''}）")
         if len(gone) > limit_:
             log(f"   ⚠ 本次判定删除 {len(gone)} 篇（>{limit_}），疑似目录接口不完整，跳过")
         elif gone:
