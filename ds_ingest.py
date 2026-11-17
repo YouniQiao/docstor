@@ -14,6 +14,8 @@ import concurrent.futures
 import hashlib
 import json
 import os
+import re
+import shutil
 import sys
 import threading
 import time
@@ -80,6 +82,61 @@ def sidebar_md(nodes: list[dict], link_prefix: str) -> str:
             lines.append(f'{indent}- {n["name"]}')
         stack.append(n["depth"])
     return "\n".join(lines) + "\n"
+
+
+_IMG_REF_RE = re.compile(r"images/([A-Za-z0-9._%\-]+)")
+
+
+def prune_gone_files(db, doc_dir: Path, lang: str, section: str,
+                     gone: list, anchors_map: dict) -> int:
+    """官网已撤稿的文档：从本地镜像真正删掉（移进 data/trash，可回收）。
+
+    · md 文件、以及只被它引用的图片/视频一起移走（共享资源保留）
+    · docs 行保留（status='gone'），只清路径与哈希 —— 官网若又挂回来，
+      下一轮抓取会重新写盘并恢复 status='ok'
+    · 侧边栏每次抓取都按官网目录树重建，本来就不含这些文档
+    """
+    stage = BASE / "data" / "trash" / time.strftime("%Y%m%d_%H%M") / lang / section
+    gone_slugs = {g["slug"] for g in gone if g["slug"]}
+
+    alive_refs: set[str] = set()
+    for p in doc_dir.glob("*.md"):
+        if p.stem in gone_slugs:
+            continue
+        try:
+            alive_refs.update(_IMG_REF_RE.findall(p.read_text(encoding="utf-8")))
+        except OSError:
+            continue
+
+    moved = 0
+    for g in gone:
+        md = BASE / (g["md_path"] or "")
+        own_refs: set[str] = set()
+        if g["md_path"] and md.is_file():
+            try:
+                own_refs = set(_IMG_REF_RE.findall(md.read_text(encoding="utf-8")))
+            except OSError:
+                pass
+            stage.mkdir(parents=True, exist_ok=True)
+            try:
+                shutil.move(str(md), str(stage / md.name))
+                moved += 1
+            except OSError as e:
+                log(f"   ⚠ 删除失败 {md.name}: {e}")
+        for name in sorted(own_refs - alive_refs):
+            f = doc_dir / "images" / name
+            if f.is_file():
+                (stage / "images").mkdir(parents=True, exist_ok=True)
+                try:
+                    shutil.move(str(f), str(stage / "images" / name))
+                except OSError:
+                    pass
+        anchors_map.pop(g["slug"], None)
+        db.conn.execute(
+            "UPDATE docs SET md_path=NULL, content_hash=NULL, anchors_json=NULL,"
+            " images=0, videos=0, bytes=0 WHERE doc_key=?", (g["doc_key"],))
+    db.conn.commit()
+    return moved
 
 
 def ingest(args) -> int:
@@ -291,8 +348,10 @@ def ingest(args) -> int:
                 "doc_key": g["doc_key"], "kind": "deleted", "lang": lang,
                 "section": section, "slug": g["slug"], "title": g["title"] or "",
             } for g in gone])
+            n_moved = prune_gone_files(db, doc_dir, lang, section, gone, anchors_map)
             stats["deleted"] = len(gone)
-            log(f"   🗑  官网已撤稿 {len(gone)} 篇（status=gone）")
+            log(f"   🗑  官网已撤稿 {len(gone)} 篇：已从镜像移除 {n_moved} 个 md"
+                f"（回收站 data/trash/）")
 
     old_anchors_path.write_text(json.dumps(anchors_map, ensure_ascii=False, indent=0),
                                 encoding="utf-8")
