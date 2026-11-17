@@ -268,6 +268,13 @@ def refresh(force: bool = False, log=print) -> dict:
 def url_for(lang: str, section: str, slug: str, is_api: int = 0) -> str:
     """官网原文地址：用实测目录，查不到再退回按板块推算。"""
     cat = get(lang, slug)
+    # 空串是「当时所有目录都探测失败」的缓存，可能已经过期：
+    # 目录树索引更新后，索引里的实测目录比空缓存可信，先问索引。
+    if cat == "":
+        fresh = _from_index(lang, slug)
+        if fresh:
+            put(lang, slug, fresh)
+            cat = fresh
     if cat is None:
         cat = resolve(lang, section, slug, is_api)
     if cat == "":

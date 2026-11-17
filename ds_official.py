@@ -40,7 +40,11 @@ SECTION_CATS = {
     "tools-faq": ["doccenter-tools-faq", "doccenter-dev-faq", "harmonyos-faqs"],
     "release-notes": ["doccenter-release-notes", "harmonyos-releases"],
     "advanced-features": ["doccenter-advanced-features", "best-practices"],
-    "getting-started": ["doccenter-getting-started"],
+    # 元服务（atomic-*）和部分新手引导文档实际挂在 atomic-guides / atomic-references /
+    # harmonyos-guides 下，只写 doccenter-getting-started 会导致按板块探测全部失败，
+    # 进而把「这篇的官网目录」缓存成空串，页面上显示成「已下架」。
+    "getting-started": ["doccenter-getting-started", "atomic-guides",
+                        "atomic-references", "harmonyos-guides"],
     "deveco-studio": ["doccenter-deveco-studio", "deveco-studio"],
     "ux-design": ["doccenter-ux-design"],
     "submission": ["doccenter-submission"],

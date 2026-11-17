@@ -316,7 +316,8 @@ def api_issues():
         parts = doc_key.split("/")
         # 官网原文地址：按实测目录拼（板块 ≠ 目录时按板块拼会 404，如 games 文档在 games-guides 下）
         official = (ds_catalog.url_for(r["lang"], r["section"], parts[-1] or "", int(r["is_api"] or 0))
-                    if len(parts) == 3 else (r["doc_url"] or ""))
+                    if len(parts) == 3 else "")
+        official = official or (r["doc_url"] or "")   # 兜底：docs.url 里存的是抓取时用的真实官网地址
         href, link_text = _link_meta(doc_key, loc)
         items.append({**{k: r[k] for k in r.keys()},
                       "rule_label": checks.rule_label(r["rule"]),
@@ -447,7 +448,7 @@ def api_export():
     rows = conn().execute(
         f"""SELECT i.doc_key, i.lang, i.section, i.rule, i.severity, i.locator, i.message,
                    i.first_seen, i.last_seen, i.status, i.resolved_at,
-                   d.is_api, c.sub, c.domain, c.kit
+                   d.is_api, d.url AS doc_url, c.sub, c.domain, c.kit
             FROM issues i
             LEFT JOIN docs d ON d.doc_key = i.doc_key
             LEFT JOIN doc_cat c ON c.lang||'/'||c.section||'/'||c.slug = i.doc_key
@@ -482,6 +483,7 @@ def api_export():
             pass
         official = (ds_catalog.url_for(r["lang"], r["section"], slug, int(r["is_api"] or 0))
                     if len(parts) == 3 else "")
+        official = official or (r["doc_url"] or "")   # 兜底：docs.url 是抓取时用的真实官网地址
         href, link_text = _link_meta(doc_key, loc)
         anchor = loc.get("anchorId") or ""
         mirror = f"{base}/#/{doc_key}" + (f"?id={anchor}" if anchor else "")
