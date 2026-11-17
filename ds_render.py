@@ -64,6 +64,9 @@ def _run(url: str, budget: int = 25000, timeout: int = 150) -> tuple[str, str, i
     title = html.unescape(m.group(1)).strip() if m else ""
     txt = html.unescape(re.sub(r"<[^>]+>", " ", out))
     missing = ("文档不存在" in txt or "页面不存在" in txt or "内容不存在" in txt)
+    # 页面存在但需授权（仓颉等受限文档）：正文只有一句「需使用经授权的账号查阅」，
+    # 没有 h1、正文长度也不够，按长度判会被误判成 missing —— 链接其实是好的。
+    gated = "需使用经授权的账号查阅" in txt
     core = title.split(" - ")[0].strip().lstrip("🐴 ").strip()
     # 正文标题：AGC 这类老文档 <title> 停在「文档中心」，只有 h1 是文档名
     h = re.search(r"<h1[^>]*>(.*?)</h1>", out, re.S)
@@ -71,7 +74,7 @@ def _run(url: str, budget: int = 25000, timeout: int = 150) -> tuple[str, str, i
     blank_h1 = not h1 or re.fullmatch(r"404|页?面?不存在|文档不存在|Not Found", h1)
     # 论坛/控制台这类站点没有 h1，但标题正常、正文过万 → 也算能打开
     bad_title = (not core) or core in GENERIC or bool(re.search(r"404|Not Found|不存在", core))
-    ok = (not missing) and ((not blank_h1) or ((not bad_title) and len(txt) > 1500))
+    ok = gated or ((not missing) and ((not blank_h1) or ((not bad_title) and len(txt) > 1500)))
     return ("ok" if ok else "missing"), (title or h1), len(out)
 
 
