@@ -47,14 +47,34 @@ def log(msg: str) -> None:
     print(f"[{now()}] {msg}", flush=True)
 
 
+def _enabled_rules(con: sqlite3.Connection) -> tuple[str, list]:
+    """与全量问题页同口径：只统计「已开启」的规则（关闭的规则数据仍在库里，但不上报）。"""
+    try:
+        import checks
+        cfg = {}
+        try:
+            for rule, enabled in con.execute("SELECT rule, enabled FROM rule_settings"):
+                cfg[rule] = bool(enabled)
+        except sqlite3.OperationalError:
+            pass
+        enabled = [r for r, meta in checks.REGISTRY.items()
+                   if cfg.get(r, meta.get("default_on", True))]
+        if not enabled:
+            return "", []
+        return (" AND rule IN (" + ",".join("?" * len(enabled)) + ")", enabled)
+    except Exception:  # noqa: BLE001
+        return "", []
+
+
 def counts() -> dict:
     con = sqlite3.connect(DB)
     try:
-        q = lambda s: con.execute(s).fetchone()[0]  # noqa: E731
+        cond, args = _enabled_rules(con)
+        q = lambda s, a=(): con.execute(s, a).fetchone()[0]  # noqa: E731
         return {
             "docs": q("SELECT COUNT(*) FROM docs WHERE status='ok'"),
-            "open": q("SELECT COUNT(*) FROM issues WHERE status='open'"),
-            "resolved": q("SELECT COUNT(*) FROM issues WHERE status='resolved'"),
+            "open": q(f"SELECT COUNT(*) FROM issues WHERE status='open'{cond}", args),
+            "resolved": q(f"SELECT COUNT(*) FROM issues WHERE status='resolved'{cond}", args),
         }
     finally:
         con.close()

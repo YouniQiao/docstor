@@ -336,7 +336,8 @@ def ingest(args) -> int:
     if not args.limit and not getattr(args, "only_missing", False) and uniq:
         cur_slugs = {n["slug"] for n in uniq}
         rows = db.conn.execute(
-            "SELECT doc_key, slug, title FROM docs WHERE lang=? AND section=? AND status='ok'",
+            "SELECT doc_key, slug, title, md_path FROM docs"
+            " WHERE lang=? AND section=? AND status='ok'",
             (lang, section)).fetchall()
         gone = [r for r in rows if r["slug"] not in cur_slugs]
         limit_ = max(50, int(len(rows) * 0.05))
