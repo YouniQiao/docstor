@@ -249,7 +249,17 @@ def ingest(args) -> int:
         md = ds_convert.normalize_headings(conv["markdown"], res.get("anchors") or [])
         path = doc_dir / f"{slug}.md"
         new_hash = ds_convert.stable_hash(md)
-        if row is not None and row["content_hash"] == new_hash and path.exists():
+        # 变更判据（用户口径 2026-11-18）：只看官网的更新时间 displayUpdateTime。
+        # 时间没变就当作没变（不再比内容哈希）——避免标题层级重排、锚点表抖动
+        # 这类结构性差异被当成「修改」。更新时间缺失时才退回内容哈希兜底。
+        upd = ds_db.to_cst(res.get("updated")) if res.get("updated") else ""
+        unchanged = False
+        if row is not None and path.exists():
+            if upd and row["updated_at"]:
+                unchanged = (upd == row["updated_at"])
+            else:
+                unchanged = (row["content_hash"] == new_hash)
+        if unchanged:
             return {"ok": True, "unchanged": True, "slug": slug, "path": str(path),
                     "title": row["title"], "doc_id": row["doc_id"],
                     "version": row["version"], "alias": row["alias"],
@@ -263,7 +273,7 @@ def ingest(args) -> int:
                 "doc_id": res.get("doc_id"), "version": res.get("version"),
                 "alias": res.get("alias"), "is_api": res.get("is_api"),
                 "anchors": ds_convert.anchors_for_docsify(res.get("anchors")),
-                "hash": hashlib.md5(md.encode("utf-8")).hexdigest(),
+                "hash": new_hash,
                 "images": conv["images"], "videos": conv["videos"],
                 "bytes": conv["bytes"], "failed_imgs": conv["failed"],
                 "updated": res.get("updated")}
