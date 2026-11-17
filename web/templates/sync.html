@@ -144,14 +144,13 @@ async function loadDays(){
   }
   wrap.innerHTML = `<table><thead><tr>
       <th>日期</th><th class="num">新增</th><th class="num">修改</th><th class="num">删除</th>
-      <th class="num">任务数</th><th class="num">耗时</th><th>明细</th>
+      <th class="num">耗时</th><th>明细</th>
     </tr></thead><tbody>` + days.map(x => `
       <tr class="dayrow ${x.d === state.day ? 'sel' : ''}" data-day="${x.d}">
         <td>${x.d}</td>
         <td class="num ${x.added ? 'add' : 'zero'}">${NF(x.added)}</td>
         <td class="num ${x.modified ? 'mod' : 'zero'}">${NF(x.modified)}</td>
         <td class="num ${x.deleted ? 'del' : 'zero'}">${NF(x.deleted)}</td>
-        <td class="num">${NF(x.runs)}</td>
         <td class="num">${x.secs ? Math.round(x.secs / 60) + ' 分钟' : '—'}</td>
         <td><a class="link" href="#" data-day="${x.d}">查看</a></td>
       </tr>`).join('') + '</tbody></table>';
