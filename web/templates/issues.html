@@ -340,9 +340,11 @@ async function loadFacets(){
       .map(k => Object.assign({}, k, {
         n: kindVal === 'api' ? k.n_api : (kindVal === 'guide' ? k.n_guide : k.n) }))
       .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+    // 注意：value 必须与显示文字完全一致，否则 Chrome 的 datalist 会把 value 和 label 拆成两行显示，
+    // 看起来像“一个 Kit 出现两次”，点第二行还会把带计数的字符串塞进输入框导致匹配失败（换不了 Kit）
     dl.innerHTML = kits.map(k => {
       state.kitMap[k.name] = `${k.section}|${k.key}`;
-      return `<option value="${esc(k.name)}">${esc(k.name)}（${(k.n || 0).toLocaleString()}）</option>`;
+      return `<option value="${esc(k.name)}">${esc(k.name)}</option>`;
     }).join('');
     inp.disabled = !domName || !kits.length;
     inp.value = '';
@@ -450,9 +452,13 @@ document.getElementById('f-sub').addEventListener('change', () => {
   if (document.getElementById('f-sub').value) document.getElementById('f-kit').value = '';
   reload();
 });
-// 输入不在候选里的 Kit 就清空，避免带着无效值去筛
+// 输入不在候选里的 Kit 就清空，避免带着无效值去筛。
+// 兼容「Kit 名（12）」这种带计数的写法：剥掉尾部计数再匹配，否则浏览器回填时会对不上。
 document.getElementById('f-kit').addEventListener('change', function(){
-  if (this.value && !(state.kitMap || {})[this.value]) this.value = '';
+  const raw = this.value.trim();
+  if (!raw) { reload(); return; }
+  const nm = raw.replace(/[（(][\d,]+[）)]\s*$/, '').trim();
+  this.value = (state.kitMap || {})[nm] ? nm : '';
   reload();
 });
 loadMe();
