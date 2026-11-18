@@ -238,13 +238,25 @@ async function loadFacets(){
   };
   const total = d.langs.reduce((a,b)=>a+b.n,0);
   document.getElementById('cards').innerHTML =
-    `<div class="card"><div class="n">${total}</div><div class="l">未解决问题总数</div></div>` +
+    `<div class="card" id="card-total" style="cursor:pointer" title="查看全部未解决问题（清空其余筛选）"><div class="n">${total}</div><div class="l">未解决问题总数</div></div>` +
     d.rules.map(r=>`<div class="card${r.enabled === false ? ' offcard' : ''}" data-rule="${r.rule}" style="cursor:pointer"><div class="n">${r.n}${r.enabled === false ? '<span class="tagoff">已关闭</span>' : ''}</div><div class="l">${esc(r.label)}</div></div>`).join('');
   document.querySelectorAll('#cards .card[data-rule]').forEach(c=>c.onclick=()=>{
     document.getElementById('f-rule').value=c.dataset.rule;
       document.getElementById('f-status').value='open';   // 卡片上的数是未解决数，点开就按未解决看
       state.page=1; loadList();
   });
+  // 总数卡片：点击 = 清空筛选，看全部未解决问题
+  document.getElementById('card-total').onclick = () => {
+    ['f-rule','f-section','f-sub','f-kit','f-kind'].forEach(id => {
+      const el = document.getElementById(id); if (el) el.value = '';
+    });
+    document.getElementById('f-d1').value = '';
+    document.getElementById('f-d2').value = '';
+    document.getElementById('f-when').value = '';
+    document.getElementById('f-range').style.display = 'none';
+    document.getElementById('f-status').value = 'open';
+    state.page = 1; loadList();
+  };
   const rs = document.getElementById('f-rule');
   rs.innerHTML = '<option value="">全部类型</option>' + d.rules.map(r=>`<option value="${r.rule}">${esc(r.label)} (${r.n})${r.enabled === false ? ' · 已关闭' : ''}</option>`).join('');
   const ss = document.getElementById('f-section');
