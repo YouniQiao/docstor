@@ -194,7 +194,16 @@ def main() -> int:
         f"未解决 {before['open']:,} → {after['open']:,}（新增 {summary['issues']['new']}、"
         f"解决 {summary['issues']['resolved']}）"
         + (f" | ⚠️ 失败 {len(failed)} 项: {', '.join(failed)}" if failed else ""))
-    # ── 4. 清理回收站与整库备份（保留 30 天）────────────────────
+    # ── 4. 重建 doc_cat（问题页按侧边栏细分筛选要用，必须跟着最新目录树）──
+    try:
+        r = subprocess.run([sys.executable, str(BASE / "scripts" / "build_doc_cat.py")],
+                           capture_output=True, text=True, timeout=900, cwd=str(BASE))
+        tail = [l.strip() for l in (r.stdout or "").strip().splitlines() if "doc_cat" in l]
+        log("🗂 目录归类重建：" + (tail[-1] if tail else (r.stderr or "").strip()[:160] or "无输出"))
+    except Exception as e:  # noqa: BLE001
+        log(f"🗂 目录归类重建失败：{e}")
+
+    # ── 5. 清理回收站与整库备份（保留 30 天）────────────────────
     try:
         r = subprocess.run([sys.executable, str(BASE / "scripts" / "clean_trash.py"),
                             "--days", "30", "--apply"],
