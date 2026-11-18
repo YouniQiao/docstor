@@ -54,7 +54,8 @@ CREATE TABLE IF NOT EXISTS issues(
   locator TEXT, message TEXT, evidence TEXT,
   first_seen TEXT NOT NULL, last_seen TEXT NOT NULL,
   status TEXT DEFAULT 'open',
-  resolved_at TEXT, run_id INTEGER, baseline INTEGER DEFAULT 1
+  resolved_at TEXT, run_id INTEGER, baseline INTEGER DEFAULT 1,
+  ignored_by TEXT, ignored_at TEXT      -- 人工忽略：谁、什么时候（status='ignored'）
 );
 CREATE INDEX IF NOT EXISTS idx_issues_doc ON issues(doc_key, status);
 CREATE INDEX IF NOT EXISTS idx_issues_rule ON issues(rule, status);
@@ -133,7 +134,9 @@ class DB:
         # 老库补列（CREATE TABLE IF NOT EXISTS 不会改已存在的表）
         for tbl, col, typ in [("nodes", "alias", "TEXT"),
                               ("docs", "updated_at", "TEXT"),
-                              ("docs", "url", "TEXT")]:
+                              ("docs", "url", "TEXT"),
+                              ("issues", "ignored_by", "TEXT"),
+                              ("issues", "ignored_at", "TEXT")]:
             cols = [r[1] for r in self.conn.execute(f"PRAGMA table_info({tbl})")]
             if col not in cols:
                 self.conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {typ}")
@@ -228,11 +231,33 @@ class DB:
                  ts, ts, run_id, int(baseline)))
             self.conn.commit()
             return True
+        # 人工忽略（status='ignored'）的问题复检时只刷新 last_seen，不能被自动改回 open
         self.conn.execute(
-            "UPDATE issues SET last_seen=?, status='open', resolved_at=NULL WHERE id=?",
-            (ts, row["id"]))
+            "UPDATE issues SET last_seen=?, "
+            "status=CASE WHEN status='ignored' THEN 'ignored' ELSE 'open' END, "
+            "resolved_at=CASE WHEN status='ignored' THEN resolved_at ELSE NULL END "
+            "WHERE id=?", (ts, row["id"]))
         self.conn.commit()
         return False
+
+    def set_ignored(self, issue_id: int, by: str) -> int:
+        """人工忽略一条问题：记谁、什么时候。返回受影响行数。"""
+        cur = self.conn.execute(
+            "UPDATE issues SET status='ignored', ignored_by=?, ignored_at=?, resolved_at=NULL "
+            "WHERE id=?", (by, now(), issue_id))
+        self.conn.commit()
+        return cur.rowcount
+
+    def clear_ignored(self, issue_id: int) -> int:
+        """取消忽略，回到未解决（清掉忽略人与时间）。"""
+        cur = self.conn.execute(
+            "UPDATE issues SET status='open', ignored_by=NULL, ignored_at=NULL "
+            "WHERE id=? AND status='ignored'", (issue_id,))
+        self.conn.commit()
+        return cur.rowcount
+
+    def get_issue(self, issue_id: int):
+        return self.conn.execute("SELECT * FROM issues WHERE id=?", (issue_id,)).fetchone()
 
     def open_issue_keys(self, doc_key: str) -> set[str]:
         cur = self.conn.execute(

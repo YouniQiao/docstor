@@ -77,6 +77,13 @@
     #list th.c-date,#list td.c-date{display:none}
     .tag{white-space:normal;line-height:1.35}
   }
+  .c-op{width:64px;text-align:center}
+  .mini2{border:1px solid var(--border);background:#fff;border-radius:6px;padding:2px 8px;
+         font-size:12px;color:#5a6472;cursor:pointer;white-space:nowrap}
+  .mini2:hover{border-color:var(--accent);color:var(--accent)}
+  #userbox{display:flex;align-items:center;gap:8px;font-size:13px}
+  #userbox a{color:var(--accent);text-decoration:none}
+  #userbox .who{color:#39414d;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .empty{text-align:center;color:var(--muted);padding:40px 0;background:#fff;border:1px solid var(--border);border-radius:10px}
 </style>
 </head>
@@ -87,6 +94,7 @@
   <a href="/sync">📚 每日文档增量记录</a>
   <a href="/admin">⚙ 站点管理</a>
   <span style="flex:1"></span>
+  <span id="userbox"></span>
   <span class="meta" id="stamp"></span>
 </header>
 
@@ -125,6 +133,7 @@
         <option value="open" selected>未解决</option>
         <option value="all">全部状态</option>
         <option value="resolved">已解决</option>
+        <option value="ignored">已忽略</option>
       </select>
     </div>
     <div class="frow">
@@ -179,6 +188,40 @@ function extraOf(it, lang, section){
 }
 
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));}
+
+// ── GitCode 登录（仅用于「忽略」的身份识别）────────────────────────────
+let ME = {user: null, enabled: false};
+async function loadMe(){
+  try { ME = await (await fetch('/api/me')).json(); } catch(e){ ME = {user: null, enabled: false}; }
+  const box = document.getElementById('userbox');
+  if (!ME.enabled){ box.innerHTML = ''; return; }
+  box.innerHTML = (ME.user && ME.user.login)
+    ? `<span class="who" title="${esc(ME.user.login)}">👤 ${esc(ME.user.name || ME.user.login)}</span><a href="/auth/logout">退出</a>`
+    : `<a href="/auth/login">GitCode 登录</a>`;
+}
+
+function opCell(it){
+  if (!ME.user) return '<span class="meta">—</span>';
+  if (it.status === 'ignored') return `<button class="mini2" data-act="unignore" data-id="${it.id}">恢复</button>`;
+  if (it.status === 'resolved') return '<span class="meta">—</span>';
+  return `<button class="mini2" data-act="ignore" data-id="${it.id}">忽略</button>`;
+}
+
+async function issueAct(kind, id){
+  const r = await fetch(`/api/issues/${id}/${kind}`, {method: 'POST'});
+  let d = {};
+  try { d = await r.json(); } catch(e){}
+  if (!r.ok){
+    if (d.need_login){ alert('请先用 GitCode 登录'); location.href = '/auth/login'; return; }
+    alert(d.error || '操作失败'); return;
+  }
+  await loadFacets(); loadList();
+}
+
+document.getElementById('list').addEventListener('click', e => {
+  const b = e.target.closest('button[data-act]');
+  if (b) issueAct(b.dataset.act, b.dataset.id);
+});
 
 async function loadFacets(){
   const d = await (await fetch('/api/facets')).json();
@@ -278,13 +321,15 @@ async function loadList(){
   else {
     document.getElementById('list').innerHTML = `<table><thead><tr>
       <th class="c-type">类型</th><th>问题</th>
-      <th class="c-doc">镜像文档</th><th class="c-off">官网文档</th><th class="c-date">识别日期</th></tr></thead><tbody>` +
+      <th class="c-doc">镜像文档</th><th class="c-off">官网文档</th><th class="c-date">识别日期</th>
+      <th class="c-op">操作</th></tr></thead><tbody>` +
       d.items.map(it=>{
         const [lang,section,slug] = it.doc_key.split('/');
         const frag = it.anchorId ? '#' + encodeURIComponent(it.anchorId) : '';
         return `<tr>
           <td class="type"><span class="tag" title="${esc(it.rule_label)}">${esc(it.rule_label)}</span></td>
-          <td class="msg">${msgOf(it)}${extraOf(it, lang, section)}</td>
+          <td class="msg">${msgOf(it)}${extraOf(it, lang, section)}${it.status === 'ignored'
+              ? `<div class="meta">已忽略：${esc(it.ignored_by || '—')} · ${esc((it.ignored_at || '').slice(0, 16))}</div>` : ''}</td>
           <td class="doc"><a href="/#/${lang}/${section}/${slug}${frag}" target="_blank" rel="noopener"
                  title="${esc(lang + '/' + section + '/' + slug)}">链接</a></td>
           <td class="off">${it.official_url
@@ -292,6 +337,7 @@ async function loadList(){
               : (it.official_gone ? '<span class="meta" title="官网已查不到这篇">已下架</span>'
                                   : '<span class="meta">—</span>')}</td>
           <td class="meta c-date">${esc((it.first_seen||'').slice(0,10))}</td>
+          <td class="c-op">${opCell(it)}</td>
         </tr>`;
       }).join('') + '</tbody></table>';
   }
@@ -325,6 +371,8 @@ document.getElementById('f-kit').addEventListener('change', function(){
   if (this.value && !(state.kitMap || {})[this.value]) this.value = '';
   reload();
 });
+loadMe();
+
 ['f-rule','f-kind','f-status'].forEach(id =>
   document.getElementById(id).addEventListener('change', reload));
 
@@ -385,7 +433,7 @@ function applyQuery(){
 }
 
 document.getElementById('stamp').textContent = '更新于 ' + new Date().toLocaleString('zh-CN');
-loadFacets().then(applyQuery).then(loadList);
+loadMe().then(loadFacets).then(applyQuery).then(loadList);
 </script>
 </body>
 </html>

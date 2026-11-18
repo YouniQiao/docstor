@@ -18,6 +18,7 @@ BASE = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE))
 
 import checks  # noqa: E402
+import auth as gcauth  # noqa: E402  GitCode 登录（web/auth.py）
 import ds_catalog
 import ds_db  # noqa: E402
 import ds_alias  # noqa: E402
@@ -49,6 +50,8 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.secret_key = _ENV.get("SECRET_KEY") or os.urandom(32)
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+gcauth.init_app(app)
 
 _db = ds_db.DB(str(DB_PATH))
 ds_rules.ensure(_db.conn, checks.REGISTRY)
@@ -299,7 +302,8 @@ def api_issues():
     total = conn().execute(f"SELECT COUNT(*) n FROM issues i WHERE {w}", args).fetchone()["n"]
     rows = conn().execute(
         f"""SELECT i.id, i.doc_key, i.lang, i.section, i.rule, i.severity, i.locator, i.message,
-                   i.first_seen, i.last_seen, i.status, d.url AS doc_url, d.is_api
+                   i.first_seen, i.last_seen, i.status, i.ignored_by, i.ignored_at,
+                   d.url AS doc_url, d.is_api
             FROM issues i LEFT JOIN docs d ON d.doc_key = i.doc_key
             WHERE {w}
             ORDER BY CASE i.severity WHEN 'error' THEN 0 WHEN 'warn' THEN 1 ELSE 2 END,
@@ -332,11 +336,39 @@ def api_issues():
                     "pages": (total + size - 1) // size, "items": items})
 
 
+@app.post("/api/issues/<int:iid>/ignore")
+def api_issue_ignore(iid: int):
+    """人工忽略一条问题（需 GitCode 登录）。记录忽略人与时间。"""
+    user = gcauth.current_user()
+    if not user:
+        return jsonify({"ok": False, "need_login": True, "error": "请先用 GitCode 登录"}), 401
+    row = _db.get_issue(iid)
+    if row is None:
+        return jsonify({"ok": False, "error": "问题不存在"}), 404
+    if row["status"] == "resolved":
+        return jsonify({"ok": False, "error": "已解决的问题不能忽略"}), 400
+    _db.set_ignored(iid, gcauth.login_name())
+    cur = _db.get_issue(iid)
+    return jsonify({"ok": True, "id": iid, "status": cur["status"],
+                    "ignored_by": cur["ignored_by"], "ignored_at": cur["ignored_at"]})
+
+
+@app.post("/api/issues/<int:iid>/unignore")
+def api_issue_unignore(iid: int):
+    """取消忽略，回到未解决（需 GitCode 登录）。"""
+    if not gcauth.current_user():
+        return jsonify({"ok": False, "need_login": True, "error": "请先用 GitCode 登录"}), 401
+    if not _db.clear_ignored(iid):
+        return jsonify({"ok": False, "error": "这条问题不是已忽略状态"}), 400
+    return jsonify({"ok": True, "id": iid, "status": "open"})
+
+
 EXPORT_COLS = [
     ("问题类型", 18), ("语言", 8), ("板块", 18), ("细分/领域", 22), ("Kit", 24),
     ("文档类别", 10), ("问题描述", 80), ("原文链接文字", 30), ("原文目标地址", 60),
     ("镜像文档", 52), ("官网文档", 52), ("状态", 10), ("识别日期", 12),
-    ("最近发现", 20), ("解决时间", 20), ("严重级别", 10), ("文档标识", 46),
+    ("最近发现", 20), ("解决时间", 20), ("忽略人", 16), ("忽略时间", 20),
+    ("严重级别", 10), ("文档标识", 46),
 ]
 
 
@@ -448,6 +480,7 @@ def api_export():
     rows = conn().execute(
         f"""SELECT i.doc_key, i.lang, i.section, i.rule, i.severity, i.locator, i.message,
                    i.first_seen, i.last_seen, i.status, i.resolved_at,
+                   i.ignored_by, i.ignored_at,
                    d.is_api, d.url AS doc_url, c.sub, c.domain, c.kit
             FROM issues i
             LEFT JOIN docs d ON d.doc_key = i.doc_key
@@ -500,10 +533,12 @@ def api_export():
             href or "",
             mirror,
             official or "已下架",
-            "未解决" if r["status"] == "open" else "已解决",
+            {"open": "未解决", "resolved": "已解决", "ignored": "已忽略"}.get(r["status"], r["status"]),
             (r["first_seen"] or "")[:10],
             r["last_seen"] or "",
             r["resolved_at"] or "",
+            r["ignored_by"] or "",
+            r["ignored_at"] or "",
             {"error": "错误", "warn": "警告", "info": "提示"}.get(r["severity"], r["severity"]),
             doc_key,
         ])
