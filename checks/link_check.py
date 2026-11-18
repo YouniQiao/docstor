@@ -313,15 +313,10 @@ def check_dead(doc, ctx):
                              severity="info", locator=loc, anchor_text=title,
                              evidence={"target": target, "verdict": verdict}))
             continue
-        if verdict == "moved":
-            new_url = off.detail(lang, section, slug) if off else ""
-            out.append(Issue("link.moved",
-                             f"官网页面已是迁移公告，建议改为：{new_url or '（原页面指向的新地址）'}",
-                             severity="warn", locator=loc, anchor_text=title,
-                             evidence={"target": target, "verdict": verdict, "suggestion": new_url}))
+        if verdict in ("moved", "renamed"):
+            # moved：页面还在，只是正文换成了「内容已迁移」公告；renamed：旧地址自动跳新地址。
+            # 两种点开都能用，不属于死链，也不再单列「链接已迁移」（用户 2026-11 决定去掉这项检查）
             continue
-        if verdict == "renamed":
-            continue          # 旧地址会自动跳到新地址，链接能打开 → 不算问题
         if _render_says_ok(lang, section, slug):
             continue          # 接口查不到但页面能打开（AGC 老文档常见）→ 不算问题
         out.append(Issue("link.dead",
@@ -382,12 +377,6 @@ def check_external(doc, ctx):
                          severity="error", locator=loc, anchor_text=title,
                          evidence={"target": url, "status": st, "err": err}))
     return out
-
-
-@register("link.moved", label="链接已迁移")
-def check_link_moved(doc, ctx):
-    """占位：官网页面已是「内容已迁移」公告，由 check_dead 产出。"""
-    return []
 
 
 @register("link.mirror_missing", label="镜像缺这篇")
