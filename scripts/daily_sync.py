@@ -194,6 +194,17 @@ def main() -> int:
         f"未解决 {before['open']:,} → {after['open']:,}（新增 {summary['issues']['new']}、"
         f"解决 {summary['issues']['resolved']}）"
         + (f" | ⚠️ 失败 {len(failed)} 项: {', '.join(failed)}" if failed else ""))
+    # ── 4. 清理回收站与整库备份（保留 30 天）────────────────────
+    try:
+        r = subprocess.run([sys.executable, str(BASE / "scripts" / "clean_trash.py"),
+                            "--days", "30", "--apply"],
+                           capture_output=True, text=True, timeout=900, cwd=str(BASE))
+        out = (r.stdout or "").strip().splitlines()
+        head = [l.strip() for l in out if "待清理" in l or "已清理" in l]
+        log("🧹 回收站/备份清理：" + ("；".join(head) if head else (out[-1].strip() if out else "无输出")))
+    except Exception as e:  # noqa: BLE001  清理失败不能影响主流程
+        log(f"🧹 回收站/备份清理失败：{e}")
+
     return 1 if failed else 0
 
 
