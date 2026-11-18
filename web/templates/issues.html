@@ -225,6 +225,13 @@ document.getElementById('list').addEventListener('click', e => {
 
 async function loadFacets(){
   const d = await (await fetch('/api/facets')).json();
+  // 重建下拉会把已选值冲掉（忽略/恢复后要留在当前视图，不能跳回全量列表）
+  const keep = {
+    rule: document.getElementById('f-rule').value,
+    section: document.getElementById('f-section').value,
+    sub: document.getElementById('f-sub').value,
+    kit: document.getElementById('f-kit').value,
+  };
   const total = d.langs.reduce((a,b)=>a+b.n,0);
   document.getElementById('cards').innerHTML =
     `<div class="card"><div class="n">${total}</div><div class="l">未解决问题总数</div></div>` +
@@ -238,8 +245,14 @@ async function loadFacets(){
   rs.innerHTML = '<option value="">全部类型</option>' + d.rules.map(r=>`<option value="${r.rule}">${esc(r.label)} (${r.n})${r.enabled === false ? ' · 已关闭' : ''}</option>`).join('');
   const ss = document.getElementById('f-section');
   ss.innerHTML = '<option value="">全部板块</option>' + d.sections.map(s=>`<option value="${s.section}">${esc(s.name)}（${s.n.toLocaleString()}）</option>`).join('');
+  // 回填先前选中的类型 / 板块 / 细分 / Kit
+  const pick = (el, v) => { if (v && [...el.options].some(o => o.value === v)) el.value = v; };
+  pick(rs, keep.rule); pick(ss, keep.section);
   state.facets = d;
   fillSubs();
+  pick(document.getElementById('f-sub'), keep.sub);
+  const kitEl = document.getElementById('f-kit');
+  if (keep.kit && (state.kitMap || {})[keep.kit]) kitEl.value = keep.kit;
   }
 
   // 二级：其它板块 = 侧边栏一级目录；「指南与API参考」= 领域（应用框架/系统/媒体…）
@@ -327,6 +340,8 @@ async function loadList(){
   const d = await (await fetch('/api/issues?' + query())).json();
   state.total = d.total; state.pages = d.pages;
   document.getElementById('count').textContent = `共 ${d.total.toLocaleString()} 条`;
+  // 忽略掉本页最后一条后别停在空页上：退回上一页（URL 也跟着退回）
+  if (!d.items.length && state.page > 1 && d.total > 0){ state.page -= 1; return loadList(); }
   if (!d.items.length){ document.getElementById('list').innerHTML = '<div class="empty">没有匹配的问题</div>'; }
   else {
     document.getElementById('list').innerHTML = `<table><thead><tr>
