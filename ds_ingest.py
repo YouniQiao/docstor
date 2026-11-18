@@ -164,6 +164,20 @@ def ingest(args) -> int:
     api_section = EN_SECTION_ALIAS.get(section, section) if lang == "en" else section
     root = api.tree(api_section, lang)
     nodes = flatten_nodes(root)
+
+    # 目录树残缺保护：官网改版/灰度中途偶尔只返回半棵树（2026-11-18 英文站工具板块一度只剩
+    # 「Development tool > Environment Setup」，一篇正文都没有）。这种情况下绝对不能覆盖库里的树，
+    # 否则侧栏、侧栏徽标、细分筛选全塌，撤稿判断也会把大半个板块误判成已下线。
+    prev = db.conn.execute("SELECT COUNT(*) FROM nodes WHERE lang=? AND section=? AND slug IS NOT NULL"
+                           " AND slug<>''", (lang, section)).fetchone()[0]
+    now = len([n for n in nodes if n["slug"]])
+    if prev >= 20 and now < prev * 0.5:
+        log(f"⚠ 目录树异常：本次只有 {now} 篇（库里 {prev} 篇），疑似官网改版中途，跳过本板块")
+        db.finish_run(run_id, {"skipped": "tree incomplete", "fetched_leaves": now,
+                               "db_leaves": prev, "elapsed_s": round(time.time() - t0, 1)})
+        db.close()
+        return 3
+
     db.replace_section_nodes(lang, section, nodes)
     # 注意：有子节点的节点也可能是一篇文档（如「ExtensionAbility组件」概述页），
     # 官网左侧同时可点击又可展开，所以只要带 relateDocument 就算文档。
