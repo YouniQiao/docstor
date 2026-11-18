@@ -97,7 +97,6 @@
   <a href="/admin">⚙ 站点管理</a>
   <span style="flex:1"></span>
   <span id="userbox"></span>
-  <span class="meta" id="stamp"></span>
 </header>
 
 <div class="wrap">
@@ -476,7 +475,6 @@ function applyQuery(){
   if (pg > 1) state.page = pg;
 }
 
-document.getElementById('stamp').textContent = '更新于 ' + new Date().toLocaleString('zh-CN');
 loadMe().then(loadFacets).then(applyQuery).then(loadList);
 </script>
 </body>
