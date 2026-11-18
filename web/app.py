@@ -791,6 +791,11 @@ def api_tree():
 
 
 # ---------------- 全量问题页 ----------------
+# 检查项分类：规则前缀 → 页面上的分组名（顺序即展示顺序；没有规则的分组不显示）
+RULE_GROUP_NAMES = {"link": "链接检查", "image": "图片检查", "text": "文本检查"}
+RULE_GROUP_ORDER = ["link", "image", "text"]
+
+
 @app.route("/admin", methods=["GET", "POST"])
 def admin_page():
     err = ""
@@ -805,16 +810,22 @@ def admin_page():
     cfg = ds_rules.all_settings(conn())
     counts = {r["rule"]: r["n"] for r in conn().execute(
         "SELECT rule, COUNT(*) n FROM issues WHERE status='open' GROUP BY rule")}
-    rules = []
+    # 检查项按规则前缀归类：link.* → 链接检查、image.* → 图片检查、text.* → 文本检查，
+    # 以后加的新检查项只要用对应前缀，就会自动落到该分类里，不用改这里
+    buckets: dict[str, list] = {}
     for rule, meta in checks.REGISTRY.items():
         c = cfg.get(rule) or {}
-        rules.append({"rule": rule, "label": meta["label"],
-                      "severity": meta.get("severity", "warn"),
-                      "enabled": c.get("enabled", meta.get("default_on", True)),
-                      "langs": c.get("langs", list(meta.get("langs") or ("cn", "en"))),
-                      "n": counts.get(rule, 0),
-                      "updated_at": c.get("updated_at", "")})
-    return render_template("admin.html", authed=True, err="", rules=rules)
+        buckets.setdefault(rule.split(".", 1)[0], []).append({
+            "rule": rule, "label": meta["label"],
+            "severity": meta.get("severity", "warn"),
+            "enabled": c.get("enabled", meta.get("default_on", True)),
+            "langs": c.get("langs", list(meta.get("langs") or ("cn", "en"))),
+            "n": counts.get(rule, 0),
+            "updated_at": c.get("updated_at", "")})
+    groups = [{"name": RULE_GROUP_NAMES[key], "rules": buckets[key],
+               "n": sum(r["n"] for r in buckets[key])}
+              for key in RULE_GROUP_ORDER if buckets.get(key)]
+    return render_template("admin.html", authed=True, err="", groups=groups)
 
 
 @app.post("/admin/logout")

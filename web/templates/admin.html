@@ -22,6 +22,8 @@
   th{color:var(--muted);font-weight:500;font-size:12.5px}
   tr:last-child td{border-bottom:none}
   .rule{font-family:ui-monospace,Menlo,monospace;color:var(--muted);font-size:12px}
+  .grow td{background:#f7f9fc;font-weight:600;color:#2f3542;border-top:1px solid #e6eaf0}
+  .gcount{float:right;font-weight:400;color:var(--muted);font-size:12px}
   .n{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
   .sw{position:relative;display:inline-block;width:40px;height:22px;cursor:pointer}
   .sw input{opacity:0;width:0;height:0}
@@ -68,11 +70,13 @@
 <div class="wrap">
   <div class="card">
     <h2>检查项</h2>
-    <div class="sub">关闭的检查项不会再被执行；已有问题保留（可在「全量问题」按类型查看）。改动即时保存。</div>
+    <div class="sub">按类别分组：链接检查 / 图片检查 / 文本检查。关闭的检查项不会再被执行；已有问题保留（可在「全量问题」按类型查看）。改动即时保存。</div>
     <table>
       <thead><tr><th style="width:38%">检查项</th><th style="width:90px">开关</th><th style="width:150px">生效语言</th><th class="n" style="width:90px">未解决</th></tr></thead>
       <tbody>
-      {% for r in rules %}
+      {% for g in groups %}
+        <tr class="grow"><td colspan="4">{{ g.name }}<span class="gcount">共 {{ '{:,}'.format(g.n) }} 条未解决</span></td></tr>
+        {% for r in g.rules %}
         <tr data-rule="{{ r.rule }}" class="{{ '' if r.enabled else 'off' }}">
           <td>
             <div>{{ r.label }}</div>
@@ -89,6 +93,7 @@
           </td>
           <td class="n">{{ r.n }}</td>
         </tr>
+        {% endfor %}
       {% endfor %}
       </tbody>
     </table>
