@@ -54,7 +54,7 @@
   .msg-extra .issue-link:hover{text-decoration:underline}
   #f-kit{min-width:180px;max-width:220px}
   #f-kit:disabled{background:#f7f8fa;color:#9aa3b2}
-  #f-sub option.zero{color:#9aa3b2}
+  #f-sub option.zero, #f-kit option.zero{color:#9aa3b2}
   #f-sub:disabled{color:#9aa3b2}
   .thumb{max-height:72px;max-width:170px;border:1px solid var(--border);border-radius:4px;vertical-align:middle;background:#fff}
   .off{min-width:80px;max-width:80px}
@@ -125,8 +125,7 @@
         <option value="api">仅 API 参考</option>
       </select>
       <select id="f-sub" disabled title="先选板块"><option value="">全部细分</option></select>
-      <input type="text" id="f-kit" list="kit-list" placeholder="全部 Kit" autocomplete="off" disabled>
-      <datalist id="kit-list"></datalist>
+      <select id="f-kit" disabled title="先选领域"><option value="">全部 Kit</option></select>
     </div>
     <div class="frow">
       <span class="flabel">问题状态</span>
@@ -266,8 +265,8 @@ async function loadFacets(){
   state.facets = d;
   fillSubs();
   pick(document.getElementById('f-sub'), keep.sub);
-  const kitEl = document.getElementById('f-kit');
-  if (keep.kit && (state.kitMap || {})[keep.kit]) kitEl.value = keep.kit;
+  fillKits();                                   // 领域定了才有 Kit 候选
+  pick(document.getElementById('f-kit'), keep.kit);
   }
 
   // 二级：其它板块 = 侧边栏一级目录；「指南与API参考」= 领域（应用框架/系统/媒体…）
@@ -313,24 +312,34 @@ async function loadFacets(){
     fillKits();
   }
 
-  // 三级：Kit（仅「指南与API参考」，选中领域后可用），可输入过滤
+  // 三级：Kit（仅「指南与API参考」，选中领域后可用）
+  // 用原生 select 而不是「输入框 + datalist」：datalist 会按输入框里已有的文字过滤候选，
+  // 选了 A 之后候选只剩 A，看起来就是“换不到 B”；而且 value 与文字不一致时还会渲染成两行。
   function fillKits(){
     const sec = document.getElementById('f-section').value;
     const lang = document.getElementById('f-lang').value;
     const dom = document.getElementById('f-sub').value;
-    const inp = document.getElementById('f-kit');
-    const dl = document.getElementById('kit-list');
+    const sel = document.getElementById('f-kit');
     const kind = document.getElementById('f-kind');
     const on = sec === 'capabilities';
     // 「指南+API参考」这档只在指南与API参考板块有意义，其它板块直接收起来
     kind.disabled = !on;
     kind.style.display = on ? '' : 'none';
     if (!on) kind.value = '';
-    state.kitMap = {};
-    if (!on) { inp.value = ''; inp.disabled = true; inp.placeholder = '全部 Kit'; dl.innerHTML = ''; return; }
+    if (!on){
+      sel.innerHTML = '<option value="">全部 Kit</option>';
+      sel.value = ''; sel.disabled = true;
+      return;
+    }
     const domLang = dom ? dom.split('|')[0] : '';
     const domName = dom ? dom.split('|')[2] : '';
     const kindVal = kind.value;
+    const old = sel.value;
+    if (!domName){                       // 还没选领域：只留占位，别把整站 100 个 Kit 塞进来
+      sel.innerHTML = '<option value="">全部 Kit</option>';
+      sel.value = ''; sel.disabled = true;
+      return;
+    }
     // kits 已按「Kit 归一化名」在中英文间合并，一个 Kit 只出一项，筛选也按归一名跨语言匹配
     const kits = (state.facets && state.facets.kits || [])
       .filter(k => k.section === sec
@@ -340,15 +349,14 @@ async function loadFacets(){
       .map(k => Object.assign({}, k, {
         n: kindVal === 'api' ? k.n_api : (kindVal === 'guide' ? k.n_guide : k.n) }))
       .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
-    // 注意：value 必须与显示文字完全一致，否则 Chrome 的 datalist 会把 value 和 label 拆成两行显示，
-    // 看起来像“一个 Kit 出现两次”，点第二行还会把带计数的字符串塞进输入框导致匹配失败（换不了 Kit）
-    dl.innerHTML = kits.map(k => {
-      state.kitMap[k.name] = `${k.section}|${k.key}`;
-      return `<option value="${esc(k.name)}">${esc(k.name)}</option>`;
+    sel.innerHTML = '<option value="">全部 Kit</option>' + kits.map(k => {
+      const v = `${k.section}|${k.key}`;
+      return `<option value="${esc(v)}"${(k.n || 0) === 0 ? ' class="zero"' : ''}>${esc(k.name)}（${(k.n || 0).toLocaleString()}）</option>`;
     }).join('');
-    inp.disabled = !domName || !kits.length;
-    inp.value = '';
-    inp.placeholder = !domName ? '先选领域' : `全部 ${domName} Kit`;
+    sel.disabled = !domName || !kits.length;
+    // 同一个领域内切换时保留之前选的 Kit；领域/口径变了就回到「全部 Kit」
+    const still = [...sel.options].some(o => o.value === old);
+    sel.value = (old && still) ? old : '';
   }
 
 // 当前筛选写回地址栏：链接可直接分享，刷新/回退都停在同一视图
@@ -367,13 +375,12 @@ function query(){
   const sec = document.getElementById('f-section').value;
   const rule = document.getElementById('f-rule').value;
   const sub = document.getElementById('f-sub').value;
-  const kitName = document.getElementById('f-kit').value.trim();
+  const kitVal = document.getElementById('f-kit').value;
   const kind = document.getElementById('f-kind').value;
   if (lang) p.set('lang', lang);
   if (sec) p.set('section', sec);
   if (rule) p.set('rule', rule);
   if (sub) p.set(sec === 'capabilities' ? 'domain' : 'sub', sub);
-  const kitVal = kitName && state.kitMap ? state.kitMap[kitName] : '';
   if (kitVal) p.set('kit', kitVal);
   if (kind) p.set('kind', kind);
   const d1 = document.getElementById('f-d1').value;
@@ -452,15 +459,7 @@ document.getElementById('f-sub').addEventListener('change', () => {
   if (document.getElementById('f-sub').value) document.getElementById('f-kit').value = '';
   reload();
 });
-// 输入不在候选里的 Kit 就清空，避免带着无效值去筛。
-// 兼容「Kit 名（12）」这种带计数的写法：剥掉尾部计数再匹配，否则浏览器回填时会对不上。
-document.getElementById('f-kit').addEventListener('change', function(){
-  const raw = this.value.trim();
-  if (!raw) { reload(); return; }
-  const nm = raw.replace(/[（(][\d,]+[）)]\s*$/, '').trim();
-  this.value = (state.kitMap || {})[nm] ? nm : '';
-  reload();
-});
+document.getElementById('f-kit').addEventListener('change', reload);
 loadMe();
 
 ['f-rule','f-status'].forEach(id =>
@@ -521,10 +520,11 @@ function applyQuery(){
   const kitQ = q.get('kit');
   if (kitQ) {
     const parts = kitQ.split('|');
+    const el = document.getElementById('f-kit');
     const want = parts.length === 2 ? `${parts[0]}|${parts[1]}` : '';   // 新格式：板块|归一化名
-    const nm = Object.keys(state.kitMap || {}).find(k =>
-      (want && state.kitMap[k] === want) || (parts.length === 3 && k === parts[2]));
-    if (nm) document.getElementById('f-kit').value = nm;
+    const nm = parts.length === 3 ? parts[2] : '';                      // 旧格式：语言|板块|Kit 原名
+    const hit = [...el.options].find(o => (want && o.value === want) || (nm && o.text.startsWith(nm)));
+    if (hit) el.value = hit.value;
   }
   set('f-status', q.get('status'));
   const pg = parseInt(q.get('page') || '1', 10);
