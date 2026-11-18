@@ -291,6 +291,16 @@ async function loadFacets(){
     inp.placeholder = !domName ? '先选领域' : `全部 ${domName} Kit`;
   }
 
+// 当前筛选写回地址栏：链接可直接分享，刷新/回退都停在同一视图
+function syncUrl(){
+  const p = new URLSearchParams(query());
+  if (p.get('page') === '1') p.delete('page');
+  if (p.get('size') === String(state.size)) p.delete('size');
+  if (p.get('status') === 'open') p.delete('status');   // 未解决是默认值，省掉更短
+  const qs = p.toString();
+  history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+}
+
 function query(){
   const p = new URLSearchParams({page: state.page, size: state.size, status: document.getElementById('f-status').value});
   const lang = document.getElementById('f-lang').value;
@@ -342,6 +352,7 @@ async function loadList(){
       }).join('') + '</tbody></table>';
   }
   renderPager();
+  syncUrl();
 }
 
 function renderPager(){
@@ -430,6 +441,8 @@ function applyQuery(){
   if (kitQ) { const nm = kitQ.split('|')[2]; if ((state.kitMap || {})[nm]) document.getElementById('f-kit').value = nm; }
   set('f-kind', q.get('kind'));
   set('f-status', q.get('status'));
+  const pg = parseInt(q.get('page') || '1', 10);
+  if (pg > 1) state.page = pg;
 }
 
 document.getElementById('stamp').textContent = '更新于 ' + new Date().toLocaleString('zh-CN');
