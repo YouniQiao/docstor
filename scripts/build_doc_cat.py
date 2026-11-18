@@ -22,16 +22,35 @@
 """
 from __future__ import annotations
 
+import re
 import sqlite3
 import sys
 from pathlib import Path
+
+
+def kit_key(name: str | None) -> str | None:
+    """Kit 归一化名：去掉「（程序框架服务）」这类中英文括注 + 统一大小写。
+
+    中文站 `Ability Kit（程序框架服务）` 与英文站 `Ability Kit` 是同一个 Kit，
+    归一后都是 `ability kit`，前端才能一个 Kit 只列一条、跨语言一起筛。
+    """
+    if not name:
+        return None
+    s = name
+    for _ in range(3):
+        nxt = re.sub(r"[（(][^）)]*[）)]", "", s)
+        if nxt == s:
+            break
+        s = nxt
+    s = re.sub(r"\s+", " ", s).strip().lower()
+    return s or None
 
 BASE = Path(__file__).resolve().parent.parent
 DB = BASE / "data" / "docstor.db"
 
 SCHEMA = """CREATE TABLE IF NOT EXISTS doc_cat(
     lang TEXT, section TEXT, slug TEXT,
-    sub TEXT, domain TEXT, kit TEXT,
+    sub TEXT, domain TEXT, kit TEXT, kit_key TEXT,
     sort INTEGER, sort_domain INTEGER, sort_kit INTEGER,
     sub_id TEXT, domain_id TEXT, kit_id TEXT,
     PRIMARY KEY(lang, section, slug))"""
@@ -92,7 +111,7 @@ def main() -> int:
 
     for (lang, section, slug), n in seen.items():
         if section in NO_SUB_SECTIONS:
-            rows.append((lang, section, n["slug"], None, None, None,
+            rows.append((lang, section, n["slug"], None, None, None, None,
                          0, 0, 0, None, None, None))
             continue
         node_id = n["node_id"]
@@ -102,14 +121,16 @@ def main() -> int:
             continue
         d2 = anc(lang, section, node_id, 2) if section == "capabilities" else None
         d3 = anc(lang, section, node_id, 3) if section == "capabilities" else None
+        k3 = d3["name"] if d3 else (d2["name"] if d2 else None)
         rows.append((lang, section, n["slug"],
                      d1["name"], d2["name"] if d2 else None, d3["name"] if d3 else None,
+                     kit_key(k3),
                      d1["sort"], d2["sort"] if d2 else 0, d3["sort"] if d3 else 0,
                      d1["node_id"], d2["node_id"] if d2 else None, d3["node_id"] if d3 else None))
 
-    db.executemany("INSERT OR REPLACE INTO doc_cat(lang,section,slug,sub,domain,kit,"
+    db.executemany("INSERT OR REPLACE INTO doc_cat(lang,section,slug,sub,domain,kit,kit_key,"
                    "sort,sort_domain,sort_kit,sub_id,domain_id,kit_id)"
-                   " VALUES(?,?,?,?,?,?,?,?,?,?,?,?)", rows)
+                   " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", rows)
     db.commit()
     for r in db.execute("SELECT lang, section, sub, COUNT(*) FROM doc_cat"
                         " GROUP BY 1,2,3 ORDER BY 1,2,MIN(sort)"):

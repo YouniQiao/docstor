@@ -119,14 +119,14 @@
         <option value="en">英文</option>
       </select>
       <select id="f-section"><option value="">全部板块</option></select>
-      <select id="f-sub" disabled title="先选板块"><option value="">全部细分</option></select>
-      <input type="text" id="f-kit" list="kit-list" placeholder="全部 Kit" autocomplete="off" disabled>
-      <datalist id="kit-list"></datalist>
-      <select id="f-kind" disabled title="仅「指南与API参考」可用">
+      <select id="f-kind" disabled title="仅「指南与API参考」可用" style="display:none">
         <option value="">指南+API参考</option>
         <option value="guide">仅指南</option>
         <option value="api">仅 API 参考</option>
       </select>
+      <select id="f-sub" disabled title="先选板块"><option value="">全部细分</option></select>
+      <input type="text" id="f-kit" list="kit-list" placeholder="全部 Kit" autocomplete="off" disabled>
+      <datalist id="kit-list"></datalist>
     </div>
     <div class="frow">
       <span class="flabel">问题状态</span>
@@ -277,8 +277,15 @@ async function loadFacets(){
     const sel = document.getElementById('f-sub');
     const old = sel.value;
     const f = state.facets || {};
-    const list = (sec === 'capabilities' ? (f.domains || []) : (f.subs || []))
+    const cap = sec === 'capabilities';
+    const kindVal = document.getElementById('f-kind').value;
+    let list = (cap ? (f.domains || []) : (f.subs || []))
       .filter(s => s.section === sec && (!lang || s.lang === lang));
+    // 「仅指南 / 仅 API 参考」：领域跟着换口径——只留该口径下有文档的领域，括号里的数也换成该口径的
+    if (cap && kindVal){
+      list = list.filter(s => (kindVal === 'api' ? s.nd_api : s.nd_guide) > 0)
+                 .map(s => Object.assign({}, s, { n: kindVal === 'api' ? s.n_api : s.n_guide }));
+    }
     // 某语言该板块只有一类（等于整个板块）时，这一项没有筛选意义，不列出来
     const perLang = {};
     list.forEach(s => { perLang[s.lang] = (perLang[s.lang] || 0) + 1; });
@@ -315,16 +322,27 @@ async function loadFacets(){
     const dl = document.getElementById('kit-list');
     const kind = document.getElementById('f-kind');
     const on = sec === 'capabilities';
+    // 「指南+API参考」这档只在指南与API参考板块有意义，其它板块直接收起来
     kind.disabled = !on;
+    kind.style.display = on ? '' : 'none';
+    if (!on) kind.value = '';
     state.kitMap = {};
     if (!on) { inp.value = ''; inp.disabled = true; inp.placeholder = '全部 Kit'; dl.innerHTML = ''; return; }
+    const domLang = dom ? dom.split('|')[0] : '';
     const domName = dom ? dom.split('|')[2] : '';
+    const kindVal = kind.value;
+    // kits 已按「Kit 归一化名」在中英文间合并，一个 Kit 只出一项，筛选也按归一名跨语言匹配
     const kits = (state.facets && state.facets.kits || [])
-      .filter(k => k.section === sec && (!lang || k.lang === lang) && (!domName || k.domain === domName))
+      .filter(k => k.section === sec
+        && (!domName || (k.domains || {})[domLang || 'cn'] === domName)
+        && (!domName || !lang || (k.domains || {})[lang] !== undefined)
+        && (!kindVal || (kindVal === 'api' ? k.nd_api : k.nd_guide) > 0))
+      .map(k => Object.assign({}, k, {
+        n: kindVal === 'api' ? k.n_api : (kindVal === 'guide' ? k.n_guide : k.n) }))
       .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
     dl.innerHTML = kits.map(k => {
-      state.kitMap[k.name] = `${k.lang}|${k.section}|${k.name}`;
-      return `<option value="${esc(k.name)}">${esc(k.name)}（${k.n.toLocaleString()}）</option>`;
+      state.kitMap[k.name] = `${k.section}|${k.key}`;
+      return `<option value="${esc(k.name)}">${esc(k.name)}（${(k.n || 0).toLocaleString()}）</option>`;
     }).join('');
     inp.disabled = !domName || !kits.length;
     inp.value = '';
@@ -413,7 +431,20 @@ function renderPager(){
 function reload(){ state.page = 1; loadList(); }
 
 ['f-section','f-lang'].forEach(id => document.getElementById(id)
-  .addEventListener('change', () => { document.getElementById('f-sub').value=''; fillSubs(); reload(); }));
+  .addEventListener('change', () => {
+    // 换板块/语言后，「指南+API参考」这档可能不再适用，领域与 Kit 也要重算
+    if (document.getElementById('f-section').value !== 'capabilities')
+      document.getElementById('f-kind').value = '';
+    document.getElementById('f-sub').value = '';
+    document.getElementById('f-kit').value = '';
+    fillSubs(); reload();
+  }));
+// 切「仅指南 / 仅 API 参考」：领域列表和 Kit 列表都要跟着换一套口径
+document.getElementById('f-kind').addEventListener('change', () => {
+  document.getElementById('f-sub').value = '';
+  document.getElementById('f-kit').value = '';
+  fillSubs(); reload();
+});
 document.getElementById('f-sub').addEventListener('change', () => {
   fillKits();
   if (document.getElementById('f-sub').value) document.getElementById('f-kit').value = '';
@@ -426,7 +457,7 @@ document.getElementById('f-kit').addEventListener('change', function(){
 });
 loadMe();
 
-['f-rule','f-kind','f-status'].forEach(id =>
+['f-rule','f-status'].forEach(id =>
   document.getElementById(id).addEventListener('change', reload));
 
 // 每日同步：上次跑的时间与结果
@@ -475,13 +506,20 @@ function applyQuery(){
   const q = new URLSearchParams(location.search);
   const set = (id, v) => { const el = document.getElementById(id); if (el && v) el.value = v; };
   set('f-lang', q.get('lang')); set('f-rule', q.get('rule'));
-  set('f-section', q.get('section')); fillSubs();
+  set('f-section', q.get('section'));
+  set('f-kind', q.get('kind'));            // 先定口径，领域列表才是对的
+  fillSubs();
   if (q.get('domain')) document.getElementById('f-sub').value = q.get('domain');
   else set('f-sub', q.get('sub'));
   fillKits();
   const kitQ = q.get('kit');
-  if (kitQ) { const nm = kitQ.split('|')[2]; if ((state.kitMap || {})[nm]) document.getElementById('f-kit').value = nm; }
-  set('f-kind', q.get('kind'));
+  if (kitQ) {
+    const parts = kitQ.split('|');
+    const want = parts.length === 2 ? `${parts[0]}|${parts[1]}` : '';   // 新格式：板块|归一化名
+    const nm = Object.keys(state.kitMap || {}).find(k =>
+      (want && state.kitMap[k] === want) || (parts.length === 3 && k === parts[2]));
+    if (nm) document.getElementById('f-kit').value = nm;
+  }
   set('f-status', q.get('status'));
   const pg = parseInt(q.get('page') || '1', 10);
   if (pg > 1) state.page = pg;

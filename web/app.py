@@ -267,14 +267,23 @@ def _issue_where() -> tuple[str, list]:
             where.append("i.doc_key IN (SELECT c.lang||'/'||c.section||'/'||c.slug FROM doc_cat c"
                          " WHERE c.lang=? AND c.section=? AND c.sub=?)")
             args += parts
-    # 指南与API参考：按侧边栏二级（领域）与三级（Kit）筛选
-    for val, col in ((domain, "domain"), (kit, "kit")):
-        if not val:
-            continue
-        parts = val.split("|")
+    # 指南与API参考：按侧边栏二级（领域）筛选
+    if domain:
+        parts = domain.split("|")
         if len(parts) == 3:
-            where.append(f"i.doc_key IN (SELECT c.lang||'/'||c.section||'/'||c.slug"
-                         f" FROM doc_cat c WHERE c.lang=? AND c.section=? AND c.{col}=?)")
+            where.append("i.doc_key IN (SELECT c.lang||'/'||c.section||'/'||c.slug"
+                         " FROM doc_cat c WHERE c.lang=? AND c.section=? AND c.domain=?)")
+            args += parts
+    # Kit 用归一化名跨语言匹配（中文站 Ability Kit（程序框架服务）= 英文站 Ability Kit）
+    if kit:
+        parts = kit.split("|")
+        if len(parts) == 2:
+            where.append("i.doc_key IN (SELECT c.lang||'/'||c.section||'/'||c.slug"
+                         " FROM doc_cat c WHERE c.section=? AND c.kit_key=?)")
+            args += parts
+        elif len(parts) == 3:      # 兼容旧链接（语言|板块|Kit 原名）
+            where.append("i.doc_key IN (SELECT c.lang||'/'||c.section||'/'||c.slug"
+                         " FROM doc_cat c WHERE c.lang=? AND c.section=? AND c.kit=?)")
             args += parts
     if kind in ("api", "guide"):
         where.append("i.doc_key IN (SELECT doc_key FROM docs WHERE is_api=?)")
@@ -573,21 +582,40 @@ def _section_opts(rows):
     return out
 
 
-def _cat_opts(col: str, sort_col: str):
-    """doc_cat 某目录列 → 选项清单（0 条问题的也列出来，置灰显示）。"""
+def _cat_opts(col: str, sort_col: str, with_kind: bool = False):
+    """doc_cat 某目录列 → 选项清单（0 条问题的也列出来，置灰显示）。
+
+    with_kind=True 时一并给出「仅指南 / 仅 API 参考」两个口径下的文档数与未解决数，
+    前端切换「指南+API参考」下拉后直接用这组数字，列表和计数不会对不上。
+    """
     fw, fa = _enabled_filter("i.rule")
+    join_docs = ("LEFT JOIN docs d ON d.doc_key = c.lang || '/' || c.section || '/' || c.slug"
+                 if with_kind else "")
+    kind_cols = """,
+               SUM(CASE WHEN d.is_api=1 THEN 1 ELSE 0 END) nd_api,
+               SUM(CASE WHEN d.is_api=0 THEN 1 ELSE 0 END) nd_guide,
+               SUM(CASE WHEN d.is_api=1 AND i.status='open' THEN 1 ELSE 0 END) n_api,
+               SUM(CASE WHEN d.is_api=0 AND i.status='open' THEN 1 ELSE 0 END) n_guide""" if with_kind else ""
     try:
         rows = conn().execute(
             f"""SELECT c.lang, c.section, c.{col} AS v, MIN(c.{sort_col}) s,
-                       COUNT(i.id) n_all, SUM(CASE WHEN i.status='open' THEN 1 ELSE 0 END) n
-                FROM doc_cat c LEFT JOIN issues i
+                       COUNT(i.id) n_all, SUM(CASE WHEN i.status='open' THEN 1 ELSE 0 END) n{kind_cols}
+                FROM doc_cat c {join_docs}
+                LEFT JOIN issues i
                   ON i.doc_key = c.lang || '/' || c.section || '/' || c.slug AND {fw}
                 WHERE c.{col} IS NOT NULL AND c.{col} != ''
                 GROUP BY 1,2,3 ORDER BY 1,2,s""", fa).fetchall()
     except Exception:  # noqa: BLE001  doc_cat 还没建
         return []
-    return [{"lang": r["lang"], "section": r["section"], "name": r["v"],
-             "n": r["n"] or 0, "n_all": r["n_all"] or 0} for r in rows]
+    out = []
+    for r in rows:
+        o = {"lang": r["lang"], "section": r["section"], "name": r["v"],
+             "n": r["n"] or 0, "n_all": r["n_all"] or 0}
+        if with_kind:
+            o.update(nd_api=r["nd_api"] or 0, nd_guide=r["nd_guide"] or 0,
+                     n_api=r["n_api"] or 0, n_guide=r["n_guide"] or 0)
+        out.append(o)
+    return out
 
 
 def _sub_opts():
@@ -595,24 +623,47 @@ def _sub_opts():
 
 
 def _domain_opts():
-    return _cat_opts("domain", "sort_domain")
+    # 领域要能跟着「仅指南 / 仅 API 参考」切换，所以带两种口径的计数
+    return _cat_opts("domain", "sort_domain", with_kind=True)
 
 
 def _kit_opts():
-    """Kit 选项要带上所属领域，前端选中领域后才列出该领域下的 Kit。"""
+    """Kit 选项：按「Kit 名（去掉中英文括注后）」合并中英文，一个 Kit 只出一条。
+
+    官网英文站的 Kit 与中文站是同一批（Ability Kit / ArkUI …），只是中文名多了「（程序框架服务）」
+    这类括注；以前按 (语言, 领域, Kit) 分组，语言=全部时同一个 Kit 会出两条，用户以为重复了。
+    """
     try:
         fw, fa = _enabled_filter("i.rule")
         rows = conn().execute(
-            f"""SELECT c.lang, c.section, c.domain, c.kit AS v, MIN(c.sort_kit) s,
-                      COUNT(i.id) n_all, SUM(CASE WHEN i.status='open' THEN 1 ELSE 0 END) n
-               FROM doc_cat c LEFT JOIN issues i
-                 ON i.doc_key = c.lang || '/' || c.section || '/' || c.slug AND {fw}
-               WHERE c.kit IS NOT NULL AND c.kit != ''
-               GROUP BY 1,2,3,4 ORDER BY 1,2,MIN(c.sort_domain),s""", fa).fetchall()
+            f"""SELECT c.section, c.kit_key, c.lang, c.domain, c.kit AS name,
+                       MIN(c.sort_kit) s, MIN(c.sort_domain) sd,
+                       COUNT(i.id) n_all, SUM(CASE WHEN i.status='open' THEN 1 ELSE 0 END) n,
+                       SUM(CASE WHEN d.is_api=1 THEN 1 ELSE 0 END) nd_api,
+                       SUM(CASE WHEN d.is_api=0 THEN 1 ELSE 0 END) nd_guide,
+                       SUM(CASE WHEN d.is_api=1 AND i.status='open' THEN 1 ELSE 0 END) n_api,
+                       SUM(CASE WHEN d.is_api=0 AND i.status='open' THEN 1 ELSE 0 END) n_guide
+                FROM doc_cat c
+                LEFT JOIN docs d ON d.doc_key = c.lang || '/' || c.section || '/' || c.slug
+                LEFT JOIN issues i ON i.doc_key = c.lang || '/' || c.section || '/' || c.slug AND {fw}
+                WHERE c.kit IS NOT NULL AND c.kit != ''
+                GROUP BY 1,2,3,4,5 ORDER BY 1, MIN(c.sort_domain), s""", fa).fetchall()
     except Exception:  # noqa: BLE001
         return []
-    return [{"lang": r["lang"], "section": r["section"], "domain": r["domain"], "name": r["v"],
-             "n": r["n"] or 0, "n_all": r["n_all"] or 0} for r in rows]
+    agg: dict[tuple, dict] = {}
+    for r in rows:
+        key = (r["section"], r["kit_key"] or r["name"])
+        e = agg.get(key)
+        if e is None:
+            e = agg[key] = {"section": key[0], "key": key[1], "name": r["name"], "name_lang": r["lang"],
+                            "domains": {}, "n": 0, "n_all": 0, "nd_api": 0, "nd_guide": 0,
+                            "n_api": 0, "n_guide": 0, "sort": r["s"], "sort_domain": r["sd"]}
+        if r["lang"] == "cn" and e["name_lang"] != "cn":   # 中文名优先
+            e["name"], e["name_lang"] = r["name"], "cn"
+        e["domains"][r["lang"]] = r["domain"]
+        for f in ("n", "n_all", "nd_api", "nd_guide", "n_api", "n_guide"):
+            e[f] += r[f] or 0
+    return sorted(agg.values(), key=lambda e: (e["section"], e["sort_domain"], e["sort"]))
 
 
 @app.get("/api/facets")
