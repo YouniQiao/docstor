@@ -265,8 +265,8 @@ def check_dead(doc, ctx):
     """站内链接是否指向官网不存在的文档。
 
     口径：**问官网**（内容接口 + 中文 sitemap），不看本地镜像有没有这篇。
-    官网也查不到 = 真死链；官网有、本地没镜像 = 镜像缺口（link.mirror_missing）；
-    英文页链到只有中文版的文档 = 英文缺译（link.no_translation）。
+    官网也查不到 = 真死链。官网查得到、只是镜像没存（镜像缺口）不再算问题；
+    英文页链到只有中文版的文档归 link.cross_lang。
     """
     out = []
     seen = set()
@@ -300,18 +300,9 @@ def check_dead(doc, ctx):
         title, aid = ctx.anchor_for_line(line_no)
         loc = {"line": line_no, "target": target, "anchorId": aid,
                "text": text, "href": abs_href(target)}
-        if verdict == "ok":
-            if _section_ready(ctx, lang, section) and not _target_exists(ctx, lang, section, slug):
-                out.append(Issue("link.mirror_missing",
-                                 f"官网有这篇但镜像里没有：{target}",
-                                 severity="info", locator=loc, anchor_text=title,
-                                 evidence={"target": target, "verdict": verdict}))
-            continue
-        if verdict == "published" and _section_ready(ctx, lang, section):
-            out.append(Issue("link.mirror_missing",
-                             f"官网已发布但镜像里没有（不在目录树）：{target}",
-                             severity="info", locator=loc, anchor_text=title,
-                             evidence={"target": target, "verdict": verdict}))
+        if verdict in ("ok", "published"):
+            # 官网有这篇、只是镜像没存（多半是官网目录树里没有的页面，抓取本来就不会收）
+            # → 链接本身没问题，不再报「镜像缺这篇」（用户 2026-11 决定去掉这项检查）
             continue
         if verdict in ("moved", "renamed"):
             # moved：页面还在，只是正文换成了「内容已迁移」公告；renamed：旧地址自动跳新地址。
@@ -377,12 +368,6 @@ def check_external(doc, ctx):
                          severity="error", locator=loc, anchor_text=title,
                          evidence={"target": url, "status": st, "err": err}))
     return out
-
-
-@register("link.mirror_missing", label="镜像缺这篇")
-def check_mirror_missing(doc, ctx):
-    """占位：结论由 check_dead 统一产出，这里只登记标签/严重级。"""
-    return []
 
 
 # 官网正文里由编辑器自动生成的 id（section123、li456、ZH-CN_TOPIC_0000001__xxx），
