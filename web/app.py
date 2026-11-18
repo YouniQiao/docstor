@@ -695,15 +695,20 @@ def api_tree():
     if cached and cached[0] == stamp and cached[1] == sig:
         return jsonify(cached[2])
 
+    # 官网的行为：目录树里 hided=1 的节点平时不展开，但当前页所在的这条链路要显示出来
+    # （例如「Automatic Scene Configuration Kit（场景配置服务）」整枝都是 hided=1，
+    #  官网侧栏在浏览该 Kit 下的页面时照常显示）。所以这里不再过滤，交给前端按链路裁剪。
     rows = conn().execute(
-        "SELECT section, node_id, parent, name, slug, sort, id FROM nodes "
-        "WHERE lang=? AND hided=0 ORDER BY section, sort, id", (lang,)).fetchall()
+        "SELECT section, node_id, parent, name, slug, sort, id, hided FROM nodes "
+        "WHERE lang=? ORDER BY section, sort, id", (lang,)).fetchall()
     nodes: dict[str, dict] = {}
     children: dict[str, list[str]] = {}
     roots: dict[str, list[str]] = {}
     for r in rows:
         key = f"{r['section']}:{r['node_id']}"
         nodes[key] = {"i": key, "n": r["name"], "s": r["slug"] or None, "k": r["section"]}
+        if r["hided"]:
+            nodes[key]["h"] = 1
         children.setdefault(f"{r['section']}:{r['parent']}", []).append(key)
         if r["parent"] == "root":
             roots.setdefault(r["section"], []).append(key)

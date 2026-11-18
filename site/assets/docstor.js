@@ -92,9 +92,14 @@
   }
 
   // 子树问题数（分组徽标）
+  // 隐藏节点（hided=1）只在「当前页所在的链路」上显示，与官网侧栏行为一致
+  function kidVisible(node) {
+    return !node.h || (state.chainKeys && state.chainKeys[node.i]);
+  }
+
   function issuesUnder(secKey, node) {
     var n = issuesOf(secKey, node.s);
-    (node.c || []).forEach(function (k) { n += issuesUnder(secKey, k); });
+    (node.c || []).forEach(function (k) { if (kidVisible(k)) n += issuesUnder(secKey, k); });
     return n;
   }
 
@@ -168,9 +173,9 @@
 
   function openLi(li) {
     var sub = li.querySelector(':scope > ul');
-    if (li._kids && sub && (!li.dataset.built || sub.childElementCount !== li._kids.length)) {
+    if (li._kids && sub && (!li.dataset.built || sub.childElementCount !== li._kids.filter(kidVisible).length)) {
       sub.innerHTML = '';                       // 先清空，保证幂等（避免重复挂载）
-      li._kids.forEach(function (k) { sub.appendChild(makeNode(k, li._sec)); });
+      li._kids.filter(kidVisible).forEach(function (k) { sub.appendChild(makeNode(k, li._sec)); });
       li.dataset.built = '1';
     }
     li.classList.add('open');
@@ -300,9 +305,21 @@
     if (state.lang === 'en') document.title = 'HarmonyOS Developer Documentation';
   }
 
+  // 当前页在树上的链路（含祖先），用于决定哪些隐藏节点要显示出来
+  function computeChainKeys() {
+    var keys = {};
+    if (!state.tree || !state.section || !state.slug) return keys;
+    var sec = null;
+    (state.tree.sections || []).forEach(function (s) { if (s.k === state.section) sec = s; });
+    if (!sec) return keys;
+    (findChain(sec.c, state.slug) || []).forEach(function (n) { if (n && n.i) keys[n.i] = 1; });
+    return keys;
+  }
+
   function sidebarNow() {
     updateBrand();
     if (!state.tree) return;
+    state.chainKeys = computeChainKeys();
     renderSidebar();
     revealPath();
   }
