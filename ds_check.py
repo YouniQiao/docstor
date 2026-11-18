@@ -10,7 +10,7 @@
   python3 ds_check.py --lang cn --section capabilities                 # 全板块规则类检查
   python3 ds_check.py --lang cn --section capabilities --limit 20      # 试跑
   python3 ds_check.py --lang cn --section capabilities --external      # 同时探外链
-  python3 ds_check.py --lang en --section capabilities --rules image.cn_text
+  python3 ds_check.py --lang en --section capabilities --rules link.anchor
 """
 from __future__ import annotations
 
