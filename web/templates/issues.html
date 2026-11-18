@@ -81,6 +81,8 @@
   .mini2{border:1px solid var(--border);background:#fff;border-radius:6px;padding:2px 8px;
          font-size:12px;color:#5a6472;cursor:pointer;white-space:nowrap}
   .mini2:hover{border-color:var(--accent);color:var(--accent)}
+  .login-hint{color:var(--accent);font-size:12px;text-decoration:none;white-space:nowrap}
+  .login-hint:hover{text-decoration:underline}
   #userbox{display:flex;align-items:center;gap:8px;font-size:13px}
   #userbox a{color:var(--accent);text-decoration:none}
   #userbox .who{color:#39414d;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -201,7 +203,9 @@ async function loadMe(){
 }
 
 function opCell(it){
-  if (!ME.user) return '<span class="meta">—</span>';
+  if (!ME.user) return ME.enabled
+    ? '<a class="login-hint" href="/auth/login" title="用 GitCode 登录后可以忽略问题">请先登录</a>'
+    : '<span class="meta">—</span>';
   if (it.status === 'ignored') return `<button class="mini2" data-act="unignore" data-id="${it.id}">恢复</button>`;
   if (it.status === 'resolved') return '<span class="meta">—</span>';
   return `<button class="mini2" data-act="ignore" data-id="${it.id}">忽略</button>`;
