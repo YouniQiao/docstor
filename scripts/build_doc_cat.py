@@ -71,6 +71,35 @@ def main() -> int:
                                                slug=slug, depth=depth, is_leaf=is_leaf,
                                                sort=sort or 0)
 
+    kids: dict[tuple, list[dict]] = {}
+    for (lang, section, _nid), n in nodes.items():
+        if n["parent"]:
+            kids.setdefault((lang, section, n["parent"]), []).append(n)
+
+    def _is_kit(name: str | None) -> bool:
+        return "Kit" in (name or "")
+
+    # 「Kit 取第几层」：大多数领域第三层就是 Kit（Ability Kit / Audio Kit …），
+    # 但「系统」下面第三层是「安全 / 网络 / 基础功能 / 硬件 / 调测调优」这种分类，第四层才是 Kit。
+    # 判据（不写死领域名，官网调整了也能自适应）：该领域第三层节点自己几乎都不叫 Kit，
+    # 而它们的子节点几乎都叫 Kit → 判定第三层是分类，Kit 下沉一层。
+    kit_depth: dict[tuple, int] = {}
+    for (lang, section, nid), n in nodes.items():
+        if n["depth"] != 2:
+            continue
+        l3s = [k for k in kids.get((lang, section, nid), []) if k["depth"] == 3]
+        if not l3s:
+            kit_depth[(lang, section, nid)] = 3
+            continue
+        groupers = 0
+        for k in l3s:
+            sub = kids.get((lang, section, k["node_id"]), [])
+            if _is_kit(k["name"]) or not sub:
+                continue
+            if sum(1 for c in sub if _is_kit(c["name"])) >= max(1, len(sub) * 0.6):
+                groupers += 1
+        kit_depth[(lang, section, nid)] = 4 if groupers >= max(1, len(l3s) * 0.6) else 3
+
     # 每个 (lang, section) 的「细分取第几层」
     names_by_depth: dict[tuple, dict[int, set]] = {}
     for (lang, section, _nid), n in nodes.items():
@@ -120,7 +149,12 @@ def main() -> int:
         if not d1:
             continue
         d2 = anc(lang, section, node_id, 2) if section == "capabilities" else None
-        d3 = anc(lang, section, node_id, 3) if section == "capabilities" else None
+        kd = 3
+        if section == "capabilities" and d2:
+            kd = kit_depth.get((lang, section, d2["node_id"]), 3)
+        # 「系统」这种多一层的领域（kd=4）里，分类自己的落地页（如 system-security 概述页）
+        # 不属于任何 Kit，anc(4) 取不到就留空，别退回去把「安全」当成一个 Kit 塞进下拉
+        d3 = anc(lang, section, node_id, kd) if section == "capabilities" else None
         k3 = d3["name"] if d3 else (d2["name"] if d2 else None)
         rows.append((lang, section, n["slug"],
                      d1["name"], d2["name"] if d2 else None, d3["name"] if d3 else None,
