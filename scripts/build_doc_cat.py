@@ -12,6 +12,9 @@
 只有一层（像「工具」下面唯一的一级目录「开发工具」）就取它下面那层，
 避免细分下拉里只出现一个没信息量的选项。cn/en 各自判定，所以中英文层级可以不同。
 
+例外：NO_SUB_SECTIONS 里的板块不做细分（设计——用户 2026-11-18 定），sub 写空，
+问题页的细分下拉自动置灰。
+
 问题表只有 doc_key（语言/板块/slug），没有目录信息，所以要靠 nodes 表沿 parent 往上走。
 未归类（nodes 里没有这个 slug）不写进表。
 
@@ -32,6 +35,9 @@ SCHEMA = """CREATE TABLE IF NOT EXISTS doc_cat(
     sort INTEGER, sort_domain INTEGER, sort_kit INTEGER,
     sub_id TEXT, domain_id TEXT, kit_id TEXT,
     PRIMARY KEY(lang, section, slug))"""
+
+# 不做细分的板块：设计（用户要求，细分对这一栏没意义）
+NO_SUB_SECTIONS = {"ux-design"}
 
 
 def main() -> int:
@@ -85,6 +91,10 @@ def main() -> int:
             seen[key] = n
 
     for (lang, section, slug), n in seen.items():
+        if section in NO_SUB_SECTIONS:
+            rows.append((lang, section, n["slug"], None, None, None,
+                         0, 0, 0, None, None, None))
+            continue
         node_id = n["node_id"]
         sd = sub_depth.get((lang, section), 1)
         d1 = anc(lang, section, node_id, sd) or anc(lang, section, node_id, 1) or n

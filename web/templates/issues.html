@@ -294,7 +294,11 @@ async function loadFacets(){
           ? `${s.name}（${s.lang === 'en' ? '英文站' : '中文站'}）` : s.name;
         return `<option value="${esc(v)}"${s.n === 0 ? ' class="zero"' : ''}>${esc(label)}（${s.n.toLocaleString()}）</option>`;
       }).join('');
+    // 该板块本来就不做细分（如「设计」）时直接收起这个下拉，别留个灰框让人以为坏了
+    const noSub = !!sec && shown.length === 0;
     sel.disabled = !sec || !shown.length;
+    sel.style.display = noSub ? 'none' : '';
+    if (noSub) sel.value = '';
     sel.title = sel.disabled ? '先选板块（该板块无需细分）'
       : (sec === 'capabilities' ? '按侧边栏二级目录（领域）筛选' : '按侧边栏目录筛选');
     if (old && shown.some(s => `${s.lang}|${s.section}|${s.name}` === old)) sel.value = old;
