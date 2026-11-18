@@ -53,10 +53,14 @@ def main() -> int:
     sub_depth: dict[tuple, int] = {}
     for key, depths in names_by_depth.items():
         pick = 1
-        for d in (1, 2, 3):
+        for d in (1, 2):
             if len(depths.get(d, ())) >= 2:
                 pick = d
                 break
+        else:
+            # 前两层都只有一个名字：一级目录只是「开发工具」这种壳，取它下面那层（如
+            # 英文站工具下只有 DevEco Studio (Windows/macOS Edition)），不要继续往内容章节沉
+            pick = 2 if depths.get(2) else 1
         sub_depth[key] = pick
 
     def anc(lang: str, section: str, node_id: str, depth: int):

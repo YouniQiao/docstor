@@ -279,21 +279,26 @@ async function loadFacets(){
     const f = state.facets || {};
     const list = (sec === 'capabilities' ? (f.domains || []) : (f.subs || []))
       .filter(s => s.section === sec && (!lang || s.lang === lang));
+    // 某语言该板块只有一类（等于整个板块）时，这一项没有筛选意义，不列出来
+    const perLang = {};
+    list.forEach(s => { perLang[s.lang] = (perLang[s.lang] || 0) + 1; });
+    const shown = list.filter(s => perLang[s.lang] > 1);
     const dup = {};
     list.forEach(s => { dup[s.name] = (dup[s.name] || 0) + 1; });
     // 语言=全部 而中英文都有细分时，逐项标出站点，避免像「工具」那样中英文条目混在一起看不出区别
     const multiLang = new Set(list.map(s => s.lang)).size > 1;
     sel.innerHTML = `<option value="">${sec === 'capabilities' ? '全部领域' : '全部细分'}</option>` +
-      list.map(s => {
+      shown.map(s => {
         const v = `${s.lang}|${s.section}|${s.name}`;
         const label = (dup[s.name] > 1 || multiLang)
           ? `${s.name}（${s.lang === 'en' ? '英文站' : '中文站'}）` : s.name;
         return `<option value="${esc(v)}"${s.n === 0 ? ' class="zero"' : ''}>${esc(label)}（${s.n.toLocaleString()}）</option>`;
       }).join('');
-    sel.disabled = !sec || !list.length;
+    sel.disabled = !sec || !shown.length;
     sel.title = sel.disabled ? '先选板块（该板块无需细分）'
       : (sec === 'capabilities' ? '按侧边栏二级目录（领域）筛选' : '按侧边栏目录筛选');
-    if (old && list.some(s => `${s.lang}|${s.section}|${s.name}` === old)) sel.value = old;
+    if (old && shown.some(s => `${s.lang}|${s.section}|${s.name}` === old)) sel.value = old;
+    else if (sel.disabled) sel.value = '';
     fillKits();
   }
 
