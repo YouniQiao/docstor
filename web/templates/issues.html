@@ -340,17 +340,25 @@ async function loadFacets(){
       sel.value = ''; sel.disabled = true;
       return;
     }
-    // kits 已按「Kit 归一化名」在中英文间合并，一个 Kit 只出一项，筛选也按归一名跨语言匹配
-    const kits = (state.facets && state.facets.kits || [])
-      .filter(k => k.section === sec
-        && (!domName || (k.domains || {})[domLang || 'cn'] === domName)
-        && (!domName || !lang || (k.domains || {})[lang] !== undefined)
-        && (!kindVal || (kindVal === 'api' ? k.nd_api : k.nd_guide) > 0))
-      .map(k => Object.assign({}, k, {
+    // facets.kits 是「板块 + 归一名 + 语言 + 领域」粒度的一行一条：
+    // 名字按归一名合并成一条（中英文同一个 Kit 只出现一次），但计数只汇总**选中领域那种语言**，
+    // 否则会把英文站的问题算进中文领域的数里，跟列表筛出来的条数对不上。
+    const rows = (state.facets && state.facets.kits || [])
+      .filter(k => k.section === sec && k.domain === domName && k.lang === (domLang || lang || 'cn')
+                && (!kindVal || (kindVal === 'api' ? k.nd_api : k.nd_guide) > 0));
+    const byKey = new Map();
+    rows.forEach(k => {
+      let e = byKey.get(k.key);
+      if (!e) { e = {key: k.key, name: k.name, n: 0, n_api: 0, n_guide: 0}; byKey.set(k.key, e); }
+      if (k.lang === 'cn') e.name = k.name;         // 中文名优先
+      e.n += k.n; e.n_api += k.n_api; e.n_guide += k.n_guide;
+    });
+    const kits = [...byKey.values()]
+      .map(k => Object.assign(k, {
         n: kindVal === 'api' ? k.n_api : (kindVal === 'guide' ? k.n_guide : k.n) }))
       .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
     sel.innerHTML = '<option value="">全部 Kit</option>' + kits.map(k => {
-      const v = `${k.section}|${k.key}`;
+      const v = `${sec}|${k.key}`;
       return `<option value="${esc(v)}"${(k.n || 0) === 0 ? ' class="zero"' : ''}>${esc(k.name)}（${(k.n || 0).toLocaleString()}）</option>`;
     }).join('');
     sel.disabled = !domName || !kits.length;

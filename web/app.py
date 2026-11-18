@@ -628,10 +628,12 @@ def _domain_opts():
 
 
 def _kit_opts():
-    """Kit 选项：按「Kit 名（去掉中英文括注后）」合并中英文，一个 Kit 只出一条。
+    """Kit 选项：按 (板块, 归一化名) 归并中英文，但计数必须留在「语言 + 领域」粒度。
 
     官网英文站的 Kit 与中文站是同一批（Ability Kit / ArkUI …），只是中文名多了「（程序框架服务）」
-    这类括注；以前按 (语言, 领域, Kit) 分组，语言=全部时同一个 Kit 会出两条，用户以为重复了。
+    这类括注，所以列表按归一化名合并成一条；但问题数不能合并——筛选时领域是带语言的
+    （`中文站|能力|应用框架`），合并后的数会把英文站的问题也算进来，跟列表对不上。
+    所以这里按 (板块, 归一名, 语言, 领域) 出行，前端只汇总选中领域那一种语言的数。
     """
     try:
         fw, fa = _enabled_filter("i.rule")
@@ -650,20 +652,13 @@ def _kit_opts():
                 GROUP BY 1,2,3,4,5 ORDER BY 1, MIN(c.sort_domain), s""", fa).fetchall()
     except Exception:  # noqa: BLE001
         return []
-    agg: dict[tuple, dict] = {}
-    for r in rows:
-        key = (r["section"], r["kit_key"] or r["name"])
-        e = agg.get(key)
-        if e is None:
-            e = agg[key] = {"section": key[0], "key": key[1], "name": r["name"], "name_lang": r["lang"],
-                            "domains": {}, "n": 0, "n_all": 0, "nd_api": 0, "nd_guide": 0,
-                            "n_api": 0, "n_guide": 0, "sort": r["s"], "sort_domain": r["sd"]}
-        if r["lang"] == "cn" and e["name_lang"] != "cn":   # 中文名优先
-            e["name"], e["name_lang"] = r["name"], "cn"
-        e["domains"][r["lang"]] = r["domain"]
-        for f in ("n", "n_all", "nd_api", "nd_guide", "n_api", "n_guide"):
-            e[f] += r[f] or 0
-    return sorted(agg.values(), key=lambda e: (e["section"], e["sort_domain"], e["sort"]))
+    return [{"section": r["section"], "key": r["kit_key"] or r["name"], "lang": r["lang"],
+             "domain": r["domain"], "name": r["name"],
+             "n": r["n"] or 0, "n_all": r["n_all"] or 0,
+             "nd_api": r["nd_api"] or 0, "nd_guide": r["nd_guide"] or 0,
+             "n_api": r["n_api"] or 0, "n_guide": r["n_guide"] or 0,
+             "sort": r["s"], "sort_domain": r["sd"]}
+            for r in sorted(rows, key=lambda r: (r["section"], r["sd"], r["s"]))]
 
 
 @app.get("/api/facets")
