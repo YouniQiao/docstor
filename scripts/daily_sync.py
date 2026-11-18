@@ -196,10 +196,23 @@ def main() -> int:
         + (f" | ⚠️ 失败 {len(failed)} 项: {', '.join(failed)}" if failed else ""))
     # ── 4. 重建 doc_cat（问题页按侧边栏细分筛选要用，必须跟着最新目录树）──
     try:
+        def _subs() -> set:
+            try:
+                with sqlite3.connect(str(DB)) as c:
+                    return {(l, s, sb) for l, s, sb in c.execute(
+                        "SELECT lang, section, sub FROM doc_cat WHERE sub IS NOT NULL AND sub<>''")}
+            except sqlite3.OperationalError:
+                return set()
+
+        subs_before = _subs()
         r = subprocess.run([sys.executable, str(BASE / "scripts" / "build_doc_cat.py")],
                            capture_output=True, text=True, timeout=900, cwd=str(BASE))
         tail = [l.strip() for l in (r.stdout or "").strip().splitlines() if "doc_cat" in l]
         log("🗂 目录归类重建：" + (tail[-1] if tail else (r.stderr or "").strip()[:160] or "无输出"))
+        # 细分增减单独记一行：官网新挂出产品分支（如英文「工具」的 HarmonyOS PC Edition）时能一眼看到
+        added = _subs() - subs_before
+        for l, s, sb in sorted(added)[:20]:
+            log(f"🆕 新增细分 {l}/{s}：{sb}")
     except Exception as e:  # noqa: BLE001
         log(f"🗂 目录归类重建失败：{e}")
 
