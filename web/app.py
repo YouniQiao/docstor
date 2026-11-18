@@ -689,9 +689,11 @@ def api_tree():
     """整站目录树（层级与官网一致）+ 各页问题数，供左侧侧边栏一次取用。"""
     lang = request.args.get("lang", "cn")
     stamp = conn().execute("SELECT COALESCE(MAX(id),0) m FROM nodes").fetchone()["m"]
+    fw, fa = _enabled_filter()          # 徽标口径：只算已开启的规则
+    sig = ",".join(fa)
     cached = _TREE_CACHE.get(lang)
-    if cached and cached[0] == stamp:
-        return jsonify(cached[1])
+    if cached and cached[0] == stamp and cached[1] == sig:
+        return jsonify(cached[2])
 
     rows = conn().execute(
         "SELECT section, node_id, parent, name, slug, sort, id FROM nodes "
@@ -724,14 +726,16 @@ def api_tree():
         sections.append({"k": sec, "n": names.get(sec, sec),
                          "c": sec_nodes if len(sec_nodes) > 1 else (sec_nodes[0].get("c") or sec_nodes)})
 
+    # 侧栏徽标必须与「全量问题」同口径：只算已开启的规则、只算 open
     issues = {}
     for r in conn().execute(
-            "SELECT lang, section, doc_key, COUNT(*) n FROM issues WHERE status='open' "
-            "AND lang=? GROUP BY section, doc_key", (lang,)):
+            f"SELECT section, doc_key, COUNT(*) n FROM issues WHERE status='open' "
+            f"AND lang=? AND {fw} GROUP BY section, doc_key", [lang] + fa):
         issues[f"{r['section']}/{r['doc_key'].rsplit('/', 1)[-1]}"] = r["n"]
 
     payload = {"lang": lang, "sections": sections, "issues": issues}
-    _TREE_CACHE[lang] = (stamp, payload)
+    _TREE_CACHE[lang] = (stamp, ",".join(fa), payload)
+    return jsonify(payload)
     return jsonify(payload)
 
 
