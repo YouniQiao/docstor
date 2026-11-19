@@ -11,7 +11,8 @@
 发信要点（踩过的坑）：
 - 发件人显示名**不要带「华为」**：从非 huawei.com 域发、显示名却声称华为，容易被企业的
   反钓鱼网关判为仿冒而静默隔离（docscheck 用的是「OpenHarmony 文档检查」，同一账号能正常送达）。
-- 正文要给纯文本副本（multipart/alternative）：只有 text/html 的群发邮件更容易被判垃圾。
+- **默认只发 HTML，不带纯文本副本**：2026-11 实测，完整日报一旦变成 multipart/alternative
+  （附 text/plain）就被 huawei.com 静默丢弃；只发 HTML 能进。看不出道理，但可复现。
 - **不要加 List-Unsubscribe / List-Unsubscribe-Post 头**：2026-11 实测，加上这两个头后华为邮箱
   静默隔离（同内容、同发件人、去掉头就能送达）；退订靠正文页脚链接。
 - 同一天不要给同一收件人连发多封近似内容的信：会被当重复内容丢掉（间隔几分钟也不行）。
@@ -67,7 +68,11 @@ def html_to_text(body_html: str) -> str:
 
 
 def send_mail(to: str, subject: str, body_html: str, from_name: str = "",
-              unsubscribe_url: str = "", reply_to: str = "") -> None:
+              unsubscribe_url: str = "", reply_to: str = "", plain_also: bool = False) -> None:
+    """plain_also=True 时附纯文本副本；默认只发 HTML。
+
+    2026-11 实测：带纯文本副本的**长邮件**（完整日报）进不了 huawei.com，
+    只发 HTML 的同内容能进（极短的纯文本+HTML 也能进）。所以默认不带纯文本。"""
     cfg = _load_config()
     host = cfg.get("SMTP_HOST")
     port = int(cfg.get("SMTP_PORT") or 465)
@@ -77,7 +82,7 @@ def send_mail(to: str, subject: str, body_html: str, from_name: str = "",
     if not (host and user and pwd):
         raise RuntimeError("SMTP 未配置：请在 .smtp.env 填写 SMTP_HOST / SMTP_USER / SMTP_PASS")
 
-    msg = MIMEMultipart("alternative")
+    msg = MIMEMultipart("alternative") if plain_also else MIMEText(body_html, "html", "utf-8")
     msg["From"] = formataddr((str(Header(from_name or DEFAULT_FROM_NAME, "utf-8")), str(fr)))
     msg["To"] = to
     if reply_to:
@@ -88,8 +93,9 @@ def send_mail(to: str, subject: str, body_html: str, from_name: str = "",
     # 不写 List-Unsubscribe / -Post 头：实测（2026-11）带这两个头的信进不了 huawei.com，
     # 去掉即能送达；退订改由正文页脚的链接承担。参数保留，方便以后只对非 huawei 域启用。
 
-    msg.attach(MIMEText(html_to_text(body_html), "plain", "utf-8"))
-    msg.attach(MIMEText(body_html, "html", "utf-8"))
+    if plain_also:
+        msg.attach(MIMEText(html_to_text(body_html), "plain", "utf-8"))
+        msg.attach(MIMEText(body_html, "html", "utf-8"))
 
     with smtplib.SMTP_SSL(host, port, timeout=30) as s:
         s.login(user, pwd)
