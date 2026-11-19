@@ -25,7 +25,7 @@ from datetime import datetime
 from email.header import Header
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from email.utils import formataddr
+from email.utils import formataddr, make_msgid
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
@@ -89,6 +89,8 @@ def send_mail(to: str, subject: str, body_html: str, from_name: str = "",
         msg["Reply-To"] = reply_to
     msg["Subject"] = Header(subject, "utf-8")
     msg["Date"] = datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0800")
+    # 缺 Message-ID 会被部分网关当成机器群发，补一个（同一天多封信也不会被判成重复）
+    msg["Message-ID"] = make_msgid(domain=(fr.split("@")[-1] if "@" in (fr or "") else "openharmony.cool"))
     msg["X-Mailer"] = "docstor-subscriber"
     # 不写 List-Unsubscribe / -Post 头：实测（2026-11）带这两个头的信进不了 huawei.com，
     # 去掉即能送达；退订改由正文页脚的链接承担。参数保留，方便以后只对非 huawei 域启用。

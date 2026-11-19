@@ -75,21 +75,23 @@ def _now() -> str:
 
 
 def _params_of(query: str) -> dict:
-    """把订阅里存的 query 串解析成 dict（存的是 urlencode 后的串，这里要还原）。"""
-    from urllib.parse import unquote
+    """把订阅里存的 query 串解析成 dict（存的是 urlencode 后的串，这里要还原）。
+
+    必须用 unquote_plus：urlencode 把空格编码成 '+'，而 Flask 解析 request.args 时
+    也把 '+' 当空格，两边口径才一致（否则「health service kit」这类 Kit 名恒为 0 条）。
+    """
+    from urllib.parse import unquote_plus
     out: dict = {}
     for kv in (query or "").split("&"):
         if not kv or "=" not in kv:
             continue
         k, v = kv.split("=", 1)
-        out[k] = unquote(v)
+        out[k] = unquote_plus(v)
     return out
 
 
 def describe(params: dict, section_names: dict, rule_label) -> str:
-    """把筛选参数翻译成一句人话，用于订阅列表和邮件标题。"""
-    from urllib.parse import unquote
-
+    """把筛选参数翻译成一句人话，用于订阅列表和邮件标题（params 已解码，不要再 unquote）。"""
     bits: list[str] = []
     lang = params.get("lang", "")
     if lang == "cn":
@@ -105,11 +107,11 @@ def describe(params: dict, section_names: dict, rule_label) -> str:
     elif kind == "api":
         bits.append("仅 API 参考")
     if params.get("domain"):
-        bits.append(unquote(params["domain"]).split("|")[-1])
+        bits.append(params["domain"].split("|")[-1])
     if params.get("sub"):
-        bits.append(unquote(params["sub"]).split("|")[-1])
+        bits.append(params["sub"].split("|")[-1])
     if params.get("kit"):
-        parts = unquote(params["kit"]).split("|")
+        parts = params["kit"].split("|")
         bits.append(parts[-1] if len(parts) < 3 else parts[2])
     rule = params.get("rule", "")
     if rule:
@@ -117,7 +119,7 @@ def describe(params: dict, section_names: dict, rule_label) -> str:
     # 订阅一律是「未解决」，条件描述里不再重复写状态
     q = params.get("q", "")
     if q:
-        bits.append(f"含「{unquote(q)}」")
+        bits.append(f"含「{q}」")
     return " · ".join(bits) or "全部问题"
 
 

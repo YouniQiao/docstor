@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import html
+import os
 import sqlite3
 import sys
 from datetime import date, datetime, timedelta
@@ -34,7 +35,7 @@ from issueq import issue_where  # noqa: E402
 
 CFG = yaml.safe_load((BASE / "config.yaml").read_text(encoding="utf-8"))
 DB_PATH = BASE / CFG["db"]["path"]
-SITE = "https://docstor.openharmony.cool"
+SITE = os.environ.get("DOCSTOR_SITE_URL") or "https://docstor.openharmony.cool"
 OUT_DIR = BASE / "data" / "mail_preview"
 WEEK = "一二三四五六日"
 
@@ -66,12 +67,12 @@ def _enabled_filter_factory(c: sqlite3.Connection):
 
 
 def params_of(query: str) -> dict:
-    from urllib.parse import unquote
+    from urllib.parse import unquote_plus      # 必须 unquote_plus：'+' 代表空格（Kit 名里就带空格）
     out = {}
     for kv in (query or "").split("&"):
         if "=" in kv:
             k, v = kv.split("=", 1)
-            out[k] = unquote(v)      # 存的是 urlencode 后的串，这里还原成原值给 SQL 用
+            out[k] = unquote_plus(v)
     return out
 
 
@@ -137,6 +138,13 @@ def build_html(user_name: str, groups: list[dict], changes: dict, day: str,
     d = datetime.strptime(day, "%Y-%m-%d")
     unsub = f"{SITE}/me/unsubscribe?token={token}"
     sync_link = f"{SITE}/sync?date={day}"
+    if changes.get("runs"):
+        change_text = (f"新增 <b>{changes['added']:,}</b> 篇 · 修改 <b>{changes['modified']:,}</b> 篇 ·"
+                       f" 删除 <b>{changes['deleted']:,}</b> 篇"
+                       + (f"（同步 {changes['secs'] // 60} 分钟）" if changes["secs"] else ""))
+    else:   # 同步没跑/失败时别说「新增 0 篇」，会被误读成当天官网没变化
+        change_text = ('<span style="color:#b25b00">当天没有同步记录（任务未跑或失败），'
+                       '问题数据可能未更新</span>')
 
     head = f"""<!DOCTYPE html>
 <html><body style="margin:0;padding:22px 12px;background:#f6f7f9;">
@@ -157,11 +165,7 @@ def build_html(user_name: str, groups: list[dict], changes: dict, day: str,
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
            style="background:#f7f9fc;border-radius:10px;margin-top:12px;">
       <tr><td style="padding:12px 14px;font-size:13px;color:#4a5160">
-        <b style="color:#1f2430">当天文档变化</b>：
-        新增 <b>{changes['added']:,}</b> 篇 ·
-        修改 <b>{changes['modified']:,}</b> 篇 ·
-        删除 <b>{changes['deleted']:,}</b> 篇
-        {'（同步 ' + str(changes['secs'] // 60) + ' 分钟）' if changes['secs'] else ''}
+        <b style="color:#1f2430">当天文档变化</b>：{change_text}
         <br><a href="{sync_link}" style="color:#2a6df4;text-decoration:none;font-size:12.5px">
           查看 {day} 的文档变更记录 →</a>
       </td></tr>
@@ -256,6 +260,8 @@ def main() -> int:
     ap.add_argument("--to", default="", help="测试：只发这个地址")
     ap.add_argument("--login", default="", help="只发某个 GitCode 账号")
     ap.add_argument("--dry-run", action="store_true", help="只生成本地 html，不发信")
+    ap.add_argument("--force", action="store_true",
+                    help="当天已成功发送过也再发一次（默认同一账号同一天只发一封，防误触/重跑）")
     args = ap.parse_args()
 
     c = conn()
@@ -296,6 +302,14 @@ def main() -> int:
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         p = OUT_DIR / f"{args.date}_{u['login']}_{stamp}.html"
         p.write_text(body, encoding="utf-8")
+        # 幂等：同一账号同一天只发一封。定时任务被重复触发、手动重跑都不会重复轰炸收件人
+        if (not args.to and not args.force and args.date == date.today().strftime("%Y-%m-%d")):
+            done = c.execute(
+                "SELECT 1 FROM sub_sends WHERE login=? AND ok=1 AND substr(sent_at,1,10)=? LIMIT 1",
+                (u["login"], args.date)).fetchone()
+            if done:
+                print(f"  - {u['login']} 今天已发过，跳过（需要重发加 --force）")
+                continue
         to = args.to or u["email"]
         subject = (f"开发者文档质量日报 {args.date}｜未解决 "
                    f"{total_union} 条，新增 {new_union} 条｜文档变化 +{changes['added']}")
@@ -318,6 +332,13 @@ def main() -> int:
         c.commit()
         if ok:
             print(f"  ✓ {u['login']} → {to}（{len(t['groups'])} 组）")
+    cutoff = datetime.now().timestamp() - 30 * 86400
+    for f in OUT_DIR.glob("*.html"):        # 预览件只留 30 天
+        try:
+            if f.stat().st_mtime < cutoff:
+                f.unlink()
+        except OSError:
+            pass
     print(f"  完成：{sent}/{len(targets)} 已发送，date={args.date}")
     return 0
 
