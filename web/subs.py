@@ -114,13 +114,11 @@ def describe(params: dict, section_names: dict, rule_label) -> str:
     rule = params.get("rule", "")
     if rule:
         bits.append(rule_label(rule))
-    st = params.get("status", "") or "open"
-    bits.append({"open": "未解决", "resolved": "已解决", "ignored": "已忽略",
-                 "all": "全部状态"}.get(st, st))
+    # 订阅一律是「未解决」，条件描述里不再重复写状态
     q = params.get("q", "")
     if q:
         bits.append(f"含「{unquote(q)}」")
-    return " · ".join(bits)
+    return " · ".join(bits) or "全部问题"
 
 
 def register(app, db_path: str, where_fn, section_names: dict, rule_label, site_url: str) -> None:
