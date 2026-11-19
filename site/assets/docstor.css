@@ -148,6 +148,17 @@ a.ds-btn{text-decoration:none;display:inline-flex;align-items:center;line-height
 body.toc-on .content{max-width:calc(100vw - var(--ds-sidebar-w) - 300px)}
 @media (max-width:1279px){ .ds-toc{display:none} body.toc-on .content{max-width:none} }
 
+/* ── 返回顶部（右下角，滚动超过一屏才出现）── */
+#ds-top{position:fixed;right:24px;bottom:24px;width:40px;height:40px;border-radius:50%;
+  border:1px solid var(--ds-border);background:#fff;color:#39414d;font-size:17px;line-height:1;
+  padding:0;cursor:pointer;z-index:70;box-shadow:0 2px 10px rgba(20,30,60,.14);
+  opacity:0;visibility:hidden;transform:translateY(6px);
+  transition:opacity .18s ease,transform .18s ease,color .18s ease,border-color .18s ease}
+#ds-top.on{opacity:1;visibility:visible;transform:none}
+#ds-top:hover{color:var(--ds-accent);border-color:var(--ds-accent)}
+@media (min-width:1281px){ body.toc-on #ds-top{right:248px} }  /* 右侧目录条展开时，按钮让到它左边，别压住目录 */
+@media (max-width:900px){ #ds-top{right:14px;bottom:70px} }    /* 窄屏让开左下角菜单键与右下角手势区 */
+
 /* ── 全站顶栏（Flask 在 "/" 注入 web/templates/_nav.html）──
    文档站是 docsify，侧栏/正文/问题面板/工具条都是绝对或固定定位，整体下移 54px 让开顶栏 */
 .sidebar{top:54px}

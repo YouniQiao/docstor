@@ -728,3 +728,45 @@
   window.$docsify = window.$docsify || {};
   window.$docsify.plugins = (window.$docsify.plugins || []).concat([plugin]);
 })();
+
+/* ── 返回顶部：右下角按钮，滚动超过约一屏才淡入 ── */
+(function () {
+  function init() {
+    var btn = document.getElementById('ds-top');
+    if (!btn) return;
+    // 宽屏滚的是 window/body，窄屏可能滚 .content，所以取三者最大值，不猜容器
+    function curY() {
+      var doc = document.scrollingElement || document.documentElement;
+      var c = document.querySelector('.content');
+      return Math.max(window.pageYOffset || 0, (doc && doc.scrollTop) || 0, c ? c.scrollTop : 0);
+    }
+    function upd() { btn.classList.toggle('on', curY() > 400); }
+    // 用 CSS scroll-behavior: smooth 让浏览器自己做缓动（JS 的 behavior:'smooth' 在这套主题下不生效），
+    // 420ms 后仍未到顶（后台标签页会跳过动画）就直接置 0 兜底
+    function toTop() {
+      if (curY() <= 0) return;
+      var docEl = document.scrollingElement || document.documentElement;
+      var c = document.querySelector('.content');
+      if (docEl) docEl.style.scrollBehavior = 'smooth';
+      if (c) c.style.scrollBehavior = 'smooth';
+      window.scrollTo(0, 0);
+      if (c) c.scrollTo(0, 0);
+      setTimeout(function () {
+        if (curY() > 0) {
+          window.scrollTo(0, 0);
+          if (docEl) docEl.scrollTop = 0;
+          if (c) c.scrollTop = 0;
+        }
+        if (docEl) docEl.style.scrollBehavior = '';
+        if (c) c.style.scrollBehavior = '';
+      }, 420);
+    }
+    btn.addEventListener('click', toTop);
+    document.addEventListener('scroll', upd, true);   // 捕获阶段才能收到 .content 的滚动事件
+    window.addEventListener('resize', upd);
+    setInterval(upd, 600);                            // 切页后滚动位置会被 docsify 重置
+    upd();
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);
+  else init();
+})();
