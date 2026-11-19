@@ -34,7 +34,8 @@
   .pill.ok{background:#e8f6ec;color:#1a7f37}
   .pill.warn{background:#fff4e5;color:#b25b00}
   .pill.off{background:#f2f4f7;color:#9aa3b2}
-  input[type=text],input[type=email],select{padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13.5px;background:#fff;color:#1f2430;font-family:inherit}
+  /* 与「全量问题」页筛选项同一套控件样式（padding 6px 10px / 13px），看起来才是一家的 */
+  input[type=text],input[type=email],select{padding:6px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;background:#fff;color:#1f2430;font-family:inherit}
   button{padding:8px 14px;border:1px solid var(--border);background:#fff;border-radius:8px;font-size:13.5px;cursor:pointer;color:#1f2430}
   button:hover{border-color:#c9d2e3}
   button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
@@ -144,15 +145,19 @@
       </div>
       <div class="row">
         <span class="flabel">问题归属</span>
-        <select id="a-lang"><option value="">全部语言</option><option value="cn">中文站</option><option value="en">英文站</option></select>
+        <select id="a-lang">
+          <option value="">全部语言</option>
+          <option value="cn">中文</option>
+          <option value="en">英文</option>
+        </select>
         <select id="a-section"><option value="">全部板块</option></select>
-        <select id="a-kind" style="display:none"><option value="">指南+API参考</option><option value="guide">仅指南</option><option value="api">仅 API 参考</option></select>
-      </div>
-      <div class="row">
-        <span class="flabel"></span>
-        <select id="a-sub"><option value="">全部细分</option></select>
-        <select id="a-domain" disabled><option value="">全部领域</option></select>
-        <select id="a-kit" disabled><option value="">全部 Kit</option></select>
+        <select id="a-kind" disabled title="仅「指南与API参考」可用" style="display:none">
+          <option value="">指南+API参考</option>
+          <option value="guide">仅指南</option>
+          <option value="api">仅 API 参考</option>
+        </select>
+        <select id="a-sub" disabled title="先选板块"><option value="">全部细分</option></select>
+        <select id="a-kit" disabled title="先选领域"><option value="">全部 Kit</option></select>
       </div>
       <div class="row">
         <span class="flabel">名称</span>
@@ -184,69 +189,92 @@ const EMAIL_STATE = {{ email_state|tojson }};
   const qs = id => document.getElementById(id);
   const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 
-  // 板块
-  SECTIONS.forEach(s => qs('a-section').insertAdjacentHTML('beforeend',
-    `<option value="${esc(s.section)}">${esc(s.name)}</option>`));
-  // 类型
-  RULES.forEach(r => qs('a-rule').insertAdjacentHTML('beforeend',
-    `<option value="${esc(r.rule)}">${esc(r.label)}（${r.n}）</option>`));
+  // 板块 / 类型（带条数，跟「全量问题」一致）
+  qs('a-section').innerHTML = '<option value="">全部板块</option>' +
+    SECTIONS.map(s => `<option value="${esc(s.section)}">${esc(s.name)}（${(s.n || 0).toLocaleString()}）</option>`).join('');
+  qs('a-rule').innerHTML = '<option value="">全部类型</option>' +
+    RULES.map(r => `<option value="${esc(r.rule)}">${esc(r.label)}（${(r.n || 0).toLocaleString()}）</option>`).join('');
 
+  // 细分 / 领域：与「全量问题」同一个下拉——指南与API参考板块列领域，其它板块列细分
   function fillSubs(){
-    const lang = qs('a-lang').value, sec = qs('a-section').value;
-    const cur = qs('a-sub').value;
-    qs('a-sub').innerHTML = '<option value="">全部细分</option>';
-    if (!sec){ qs('a-sub').disabled = true; return; }
-    const rows = SUBS.filter(x => x.section === sec && (!lang || x.lang === lang) && (x.n_all||0) >= 0);
-    const seen = new Set();
-    rows.forEach(x => {
-      const key = x.lang + '|' + sec + '|' + x.name;
-      if (seen.has(key)) return; seen.add(key);
-      qs('a-sub').insertAdjacentHTML('beforeend',
-        `<option value="${esc(key)}">${esc(x.name)}（${x.n_all||0}）</option>`);
-    });
-    qs('a-sub').disabled = rows.length === 0;
-    if (cur) qs('a-sub').value = cur;
-  }
-
-  function fillDomains(){
-    const lang = qs('a-lang').value || 'cn', sec = qs('a-section').value;
-    const kitDom = qs('a-domain'), kit = qs('a-kit');
-    kitDom.innerHTML = '<option value="">全部领域</option>';
-    kit.innerHTML = '<option value="">全部 Kit</option>';
-    if (sec !== 'capabilities'){ kitDom.disabled = true; kit.disabled = true; return; }
-    const ds = DOMAINS.filter(x => x.lang === lang && x.section === sec);
-    ds.forEach(x => kitDom.insertAdjacentHTML('beforeend',
-      `<option value="${esc(x.lang+'|'+x.section+'|'+x.name)}">${esc(x.name)}（${x.n_all||0}）</option>`));
-    kitDom.disabled = ds.length === 0;
-    kit.disabled = false;
+    const sec = qs('a-section').value, lang = qs('a-lang').value;
+    const sel = qs('a-sub'), old = sel.value, cap = sec === 'capabilities';
+    const kindVal = qs('a-kind').value;
+    let list = (cap ? DOMAINS : SUBS).filter(s => s.section === sec && (!lang || s.lang === lang));
+    if (cap && kindVal){
+      list = list.filter(s => (kindVal === 'api' ? s.nd_api : s.nd_guide) > 0)
+                 .map(s => Object.assign({}, s, { n: kindVal === 'api' ? s.n_api : s.n_guide }));
+    }
+    const perLang = {};
+    list.forEach(s => { perLang[s.lang] = (perLang[s.lang] || 0) + 1; });
+    const shown = list.filter(s => perLang[s.lang] > 1);
+    const dup = {};
+    list.forEach(s => { dup[s.name] = (dup[s.name] || 0) + 1; });
+    const multiLang = new Set(list.map(s => s.lang)).size > 1;
+    sel.innerHTML = `<option value="">${cap ? '全部领域' : '全部细分'}</option>` +
+      shown.map(s => {
+        const v = `${s.lang}|${s.section}|${s.name}`;
+        const label = (dup[s.name] > 1 || multiLang)
+          ? `${s.name}（${s.lang === 'en' ? '英文站' : '中文站'}）` : s.name;
+        const n = (s.n != null ? s.n : (s.n_all || 0));
+        return `<option value="${esc(v)}"${n === 0 ? ' class="zero"' : ''}>${esc(label)}（${n.toLocaleString()}）</option>`;
+      }).join('');
+    const noSub = !!sec && shown.length === 0;
+    sel.disabled = !sec || !shown.length;
+    sel.style.display = noSub ? 'none' : '';
+    if (noSub) sel.value = '';
+    sel.title = sel.disabled ? '先选板块（该板块无需细分）'
+      : (cap ? '按侧边栏二级目录（领域）筛选' : '按侧边栏目录筛选');
+    if (old && shown.some(s => `${s.lang}|${s.section}|${s.name}` === old)) sel.value = old;
+    else if (sel.disabled) sel.value = '';
     fillKits();
   }
 
+  // Kit：先选领域再选 Kit；中英文同名的合并成一条，计数只汇总选中领域那种语言
   function fillKits(){
-    const sel = qs('a-kit'), domVal = qs('a-domain').value;
+    const sec = qs('a-section').value, lang = qs('a-lang').value;
+    const dom = qs('a-sub').value, sel = qs('a-kit'), kind = qs('a-kind');
+    const on = sec === 'capabilities';
+    kind.disabled = !on;
+    kind.style.display = on ? '' : 'none';
+    if (!on) kind.value = '';
+    const domLang = dom ? dom.split('|')[0] : '';
+    const domName = dom ? dom.split('|')[2] : '';
+    const kindVal = kind.value;
+    const old = sel.value;
     sel.innerHTML = '<option value="">全部 Kit</option>';
-    if (!domVal){ sel.disabled = true; return; }
-    const domName = domVal.split('|')[2];
-    const sec = qs('a-section').value, lang = qs('a-lang').value || 'cn';
-    const rows = KITS.filter(k => k.section === sec && k.domain === domName && k.lang === lang);
-    const seen = new Set();
+    if (!on || !domName){ sel.value = ''; sel.disabled = true; return; }
+    const rows = KITS.filter(k => k.section === sec && k.domain === domName
+                && k.lang === (domLang || lang || 'cn')
+                && (!kindVal || (kindVal === 'api' ? k.nd_api : k.nd_guide) > 0));
+    const byKey = new Map();
     rows.forEach(k => {
-      if (seen.has(k.key)) return; seen.add(k.key);
-      sel.insertAdjacentHTML('beforeend',
-        `<option value="${esc(sec+'|'+k.key)}">${esc(k.name)}（${k.n_all||0}）</option>`);
+      let e = byKey.get(k.key);
+      if (!e){ e = {key: k.key, name: k.name, n: 0, n_api: 0, n_guide: 0}; byKey.set(k.key, e); }
+      if (k.lang === 'cn') e.name = k.name;
+      e.n += k.n; e.n_api += k.n_api; e.n_guide += k.n_guide;
     });
-    sel.disabled = rows.length === 0;
+    const kits = [...byKey.values()]
+      .map(k => Object.assign(k, { n: kindVal === 'api' ? k.n_api : (kindVal === 'guide' ? k.n_guide : k.n) }))
+      .sort((a, b) => b.n - a.n || a.name.localeCompare(b.name));
+    sel.innerHTML = '<option value="">全部 Kit</option>' + kits.map(k =>
+      `<option value="${esc(sec + '|' + k.key)}"${(k.n || 0) === 0 ? ' class="zero"' : ''}>${esc(k.name)}（${(k.n || 0).toLocaleString()}）</option>`).join('');
+    sel.disabled = !kits.length;
+    const still = [...sel.options].some(o => o.value === old);
+    sel.value = (old && still) ? old : '';
   }
 
   function params(){
-    const p = { status: 'open' };          // 订阅的都是未解决问题，不开放状态选择
-    for (const [k,id] of [['lang','a-lang'],['section','a-section'],['kind','a-kind'],
-                          ['sub','a-sub'],['domain','a-domain'],['kit','a-kit'],
-                          ['rule','a-rule']]){
-      const el = qs(id); if (!el) continue;
-      const v = (el.value||'').trim();
-      if (v && !el.disabled) p[k] = v;
-    }
+    const p = { status: 'open' };            // 订阅的都是未解决问题，不开放状态选择
+    const lang = qs('a-lang').value, sec = qs('a-section').value;
+    const kind = qs('a-kind').value, rule = qs('a-rule').value;
+    const sub = qs('a-sub').value, kit = qs('a-kit').value;
+    if (lang) p.lang = lang;
+    if (sec) p.section = sec;
+    if (kind) p.kind = kind;
+    if (rule) p.rule = rule;
+    if (sub) p[sec === 'capabilities' ? 'domain' : 'sub'] = sub;
+    if (kit) p.kit = kit;
     return p;
   }
 
@@ -263,37 +291,24 @@ const EMAIL_STATE = {{ email_state|tojson }};
   }
   const changed = () => { clearTimeout(timer); timer = setTimeout(preview, 250); };
 
-  qs('a-lang').addEventListener('change', () => { fillSubs(); fillDomains(); changed(); });
-  qs('a-section').addEventListener('change', () => {
-    const cap = qs('a-section').value === 'capabilities';
-    qs('a-kind').style.display = cap ? '' : 'none';
-    if (!cap) qs('a-kind').value = '';
-    fillSubs(); fillDomains(); changed();
-  });
-  qs('a-kind').addEventListener('change', changed);
-  qs('a-sub').addEventListener('change', changed);
-  qs('a-domain').addEventListener('change', () => { fillKits(); changed(); });
+  qs('a-lang').addEventListener('change', () => { fillSubs(); changed(); });
+  qs('a-section').addEventListener('change', () => { fillSubs(); changed(); });
+  qs('a-kind').addEventListener('change', () => { fillSubs(); changed(); });
+  qs('a-sub').addEventListener('change', () => { fillKits(); changed(); });
   qs('a-kit').addEventListener('change', changed);
   qs('a-rule').addEventListener('change', changed);
-  fillSubs(); fillDomains(); preview();
 
   // 从「全量问题」页带过来的筛选：URL 上有同名参数就回填
   const u = new URLSearchParams(location.search);
-  let touched = false;
-  for (const [k,id] of [['lang','a-lang'],['kind','a-kind'],
-                        ['sub','a-sub'],['domain','a-domain'],['kit','a-kit'],
-                        ['rule','a-rule']]){
-    const v = u.get(k); const el = qs(id);
-    if (!v || !el) continue;
-    touched = true;
-  }
-  if (u.get('section')) qs('a-section').value = u.get('section');
-  fillSubs(); fillDomains();
-  for (const [k,id] of [['lang','a-lang'],['kind','a-kind'],['sub','a-sub'],
-                        ['domain','a-domain'],['kit','a-kit'],['rule','a-rule']]){
-    const v = u.get(k); const el = qs(id);
-    if (v && el) el.value = v;
-  }
+  const pick = (el, v) => { if (v && [...el.options].some(o => o.value === v)) el.value = v; };
+  pick(qs('a-lang'), u.get('lang'));
+  pick(qs('a-section'), u.get('section'));
+  pick(qs('a-kind'), u.get('kind'));
+  fillSubs();
+  pick(qs('a-sub'), u.get('sub') || u.get('domain'));
+  fillKits();
+  pick(qs('a-kit'), u.get('kit'));
+  pick(qs('a-rule'), u.get('rule'));
   preview();
 
   qs('a-add').addEventListener('click', async () => {
