@@ -1,0 +1,74 @@
+{# 统一顶栏：文档站 / 全量问题 / 每日文档增量记录 + 右侧用户区
+   三个页面共用，当前页由 request.path 高亮，用户态走 /api/me。 #}
+<style>
+  header.tnav{display:flex;align-items:center;gap:20px;padding:0 24px;background:#fff;
+    border-bottom:1px solid #e4e7ec;position:sticky;top:0;z-index:20;height:54px;box-sizing:border-box}
+  header.tnav .brand{font-size:15px;font-weight:700;color:#1f2430;text-decoration:none;letter-spacing:.2px}
+  header.tnav .brand:hover{color:#2a6df4}
+  header.tnav .tabs{display:flex;align-items:stretch;height:100%;gap:2px}
+  header.tnav .tabs a{display:flex;align-items:center;padding:0 12px;font-size:13.5px;color:#687083;
+    text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
+  header.tnav .tabs a:hover{color:#2a6df4}
+  header.tnav .tabs a.on{color:#2a6df4;font-weight:600;border-bottom-color:#2a6df4}
+  header.tnav .sp{flex:1}
+  header.tnav .usr{position:relative;display:flex;align-items:center;gap:8px;font-size:13px}
+  header.tnav .usr>a{display:flex;align-items:center;gap:5px;color:#39414d;text-decoration:none;
+    padding:6px 10px;border-radius:8px;max-width:170px}
+  header.tnav .usr>a:hover{background:#f5f7fb;color:#2a6df4}
+  header.tnav .usr .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  header.tnav .menu{position:absolute;right:0;top:100%;margin-top:4px;background:#fff;
+    border:1px solid #e4e7ec;border-radius:10px;box-shadow:0 8px 24px rgba(20,30,60,.10);
+    min-width:136px;padding:6px;display:none}
+  header.tnav .menu.on{display:block}
+  header.tnav .menu a{display:block;padding:8px 10px;border-radius:7px;font-size:13px;
+    color:#1f2430;text-decoration:none}
+  header.tnav .menu a:hover{background:#f5f7fb;color:#2a6df4}
+  @media(max-width:760px){
+    header.tnav{padding:0 10px;gap:8px;height:50px}
+    header.tnav .brand{display:none}
+    header.tnav .tabs{overflow-x:auto;scrollbar-width:none}
+    header.tnav .tabs::-webkit-scrollbar{display:none}
+    header.tnav .tabs a{padding:0 9px;font-size:13px}
+    header.tnav .usr>a{padding:6px 8px}
+  }
+</style>
+<header class="tnav">
+  <a class="brand" href="/">docstor</a>
+  <nav class="tabs">
+    <a href="/" class="{{ 'on' if request.path == '/' else '' }}">文档站</a>
+    <a href="/issues" class="{{ 'on' if request.path == '/issues' else '' }}">全量问题</a>
+    <a href="/sync" class="{{ 'on' if request.path == '/sync' else '' }}">每日文档增量记录</a>
+  </nav>
+  <span class="sp"></span>
+  <div class="usr" id="tnav-usr"></div>
+</header>
+<script>
+(async () => {
+  const box = document.getElementById('tnav-usr');
+  if (!box) return;
+  let me = {user: null, enabled: false};
+  try { me = await (await fetch('/api/me')).json(); } catch (e) {}
+  if (!me.enabled) return;                        // 没配 GitCode 登录：不显示用户区
+  if (!me.user || !me.user.login) {
+    box.innerHTML = '<a href="/auth/login">GitCode 登录</a>';
+    return;
+  }
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
+    c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
+  const name = me.user.name || me.user.login;
+  box.innerHTML =
+    `<a href="/me" id="tnav-name"><span>👤</span><span class="nm">${esc(name)}</span><span style="color:#9aa3b2">▾</span></a>
+     <div class="menu" id="tnav-menu">
+       <a href="/me">个人中心</a>
+       <a href="/auth/logout">退出</a>
+     </div>`;
+  const menu = document.getElementById('tnav-menu');
+  document.getElementById('tnav-name').addEventListener('click', e => {
+    e.preventDefault();
+    menu.classList.toggle('on');
+  });
+  document.addEventListener('click', e => {
+    if (!box.contains(e.target)) menu.classList.remove('on');
+  });
+})();
+</script>

@@ -8,7 +8,6 @@
   :root{--accent:#2f6fed;--accent-weak:#eaf1ff;--border:#e6e8eb;--muted:#6b7280;--danger:#d94a4a;--warn:#b3761f;--info:#57606a}
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;color:#1f2430;background:#f7f8fa}
-  header{background:#fff;border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:10}
   header h1{font-size:17px;margin:0}
   header a{color:var(--muted);text-decoration:none;font-size:13px}
   header a:hover{color:var(--accent)}
@@ -83,20 +82,11 @@
   .mini2:hover{border-color:var(--accent);color:var(--accent)}
   .login-hint{color:var(--accent);font-size:12px;text-decoration:none;white-space:nowrap}
   .login-hint:hover{text-decoration:underline}
-  #userbox{display:flex;align-items:center;gap:8px;font-size:13px}
-  #userbox a{color:var(--accent);text-decoration:none}
-  #userbox .who{color:#39414d;max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .empty{text-align:center;color:var(--muted);padding:40px 0;background:#fff;border:1px solid var(--border);border-radius:10px}
 </style>
 </head>
 <body>
-<header>
-  <h1>全量问题</h1>
-  <a href="/">← 返回文档站</a>
-  <a href="/sync">📚 每日文档增量记录</a>
-  <span style="flex:1"></span>
-  <span id="userbox"></span>
-</header>
+{% include "_nav.html" %}
 
 <div class="wrap">
   <div class="cards" id="cards"></div>
@@ -191,13 +181,8 @@ function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','
 
 // ── GitCode 登录（仅用于「忽略」的身份识别）────────────────────────────
 let ME = {user: null, enabled: false};
-async function loadMe(){
+async function loadMe(){        // 仅用于「忽略/恢复」按钮的权限判断，用户区由公共导航渲染
   try { ME = await (await fetch('/api/me')).json(); } catch(e){ ME = {user: null, enabled: false}; }
-  const box = document.getElementById('userbox');
-  if (!ME.enabled){ box.innerHTML = ''; return; }
-  box.innerHTML = (ME.user && ME.user.login)
-    ? `<span class="who" title="${esc(ME.user.login)}">👤 ${esc(ME.user.name || ME.user.login)}</span><a href="/auth/logout">退出</a>`
-    : `<a href="/auth/login">GitCode 登录</a>`;
 }
 
 function opCell(it){

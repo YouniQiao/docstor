@@ -8,13 +8,8 @@
   :root{--accent:#2a6df4;--border:#e4e7ec;--muted:#687083;--bg:#f6f7f9;--line:#eef0f3}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:#1f2430;font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
-  header{display:flex;align-items:center;gap:12px;padding:16px 24px;background:#fff;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5}
-  header h1{font-size:17px;margin:0}
-  header a{color:var(--muted);text-decoration:none;font-size:13px}
-  header a:hover{color:var(--accent)}
-  header .sp{flex:1}
-  header .who{color:#1f2430;font-size:13px}
-  .layout{max-width:1124px;margin:22px auto 60px;padding:0 20px;display:flex;gap:18px;align-items:flex-start}
+  .pagehd{max-width:1124px;margin:18px auto 0;padding:0 20px;font-size:17px;font-weight:600}
+  .layout{max-width:1124px;margin:14px auto 60px;padding:0 20px;display:flex;gap:18px;align-items:flex-start}
   .side{width:186px;flex:0 0 186px;background:#fff;border:1px solid var(--border);border-radius:12px;padding:10px}
   .side .gtitle{color:var(--muted);font-size:12px;padding:6px 10px}
   .side a{display:block;padding:8px 10px;border-radius:8px;color:#1f2430;text-decoration:none;font-size:13.5px}
@@ -62,13 +57,9 @@
 </style>
 </head>
 <body>
-<header>
-  <h1>个人中心</h1>
-  <span class="who">👤 {{ user.name or user.login }}</span>
-  <span class="sp"></span>
-  <a href="/issues">全量问题 →</a>
-  <a href="/auth/logout">退出</a>
-</header>
+{% include "_nav.html" %}
+
+<div class="pagehd">个人中心</div>
 
 <div class="layout">
   <nav class="side">
@@ -101,7 +92,7 @@
       <div class="sub">每天 8:00 把订阅内容发到这里。首次保存会发一封确认信，点确认按钮后才生效。</div>
       <div class="row">
         <input type="email" id="email" placeholder="you@example.com" value="{{ email }}" style="width:300px;margin-right:4px">
-        <button class="primary" id="save-email" style="margin-left:6px">保存并发送确认信</button>
+        <button class="primary" id="save-email" style="margin-left:6px">{{ '重新发送确认信' if verified and active else '保存并发送确认信' }}</button>
         <span id="email-state">
           {% if not email %}<span class="pill off">未设置</span>
           {% elif not active %}<span class="pill off">已退订</span>
@@ -121,7 +112,7 @@
         {% for g in groups %}
           <tr data-id="{{ g.id }}">
             <td>{{ g.label }}</td>
-            <td><span class="hint">{{ g.summary }}</span></td>
+            <td><span class="hint">{{ g.summary if g.summary != g.label else '—' }}</span></td>
             <td class="n">{{ '{:,}'.format(g.total) }}</td>
             <td class="n">{{ '{:,}'.format(g.new) }}</td>
             <td><label class="sw"><input type="checkbox" class="tg" {{ 'checked' if g.enabled }}><span></span></label></td>

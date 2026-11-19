@@ -8,7 +8,6 @@
   :root{--accent:#2f6fed;--accent-weak:#eaf1ff;--border:#e6e8eb;--muted:#6b7280;--danger:#d94a4a;--warn:#b3761f;--info:#57606a;--add:#1a7f37;--del:#b03030}
   *{box-sizing:border-box}
   body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;color:#1f2430;background:#f7f8fa}
-  header{background:#fff;border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:10}
   header h1{font-size:17px;margin:0}
   header a{color:var(--muted);text-decoration:none;font-size:13px}
   header a:hover{color:var(--accent)}
@@ -51,20 +50,17 @@
   #items-wrap th.c-ver{width:110px} #items-wrap th.c-doc{width:76px} #items-wrap th.c-off{width:76px}
   @media (max-width:720px){
     .wrap{padding:0 12px 40px}
-    header{padding:12px 14px;gap:10px}
+    .wrap{padding-left:12px;padding-right:12px}
     .cards{grid-template-columns:repeat(2,1fr)}
     input[type=text]{min-width:0;flex:1}
   }
 </style>
 </head>
 <body>
-<header>
-  <h1>每日文档增量记录</h1>
-  <a href="/issues">← 全量问题</a>
-  <a href="/">返回文档站</a>
-  <span style="flex:1"></span>
-  <span class="muted" id="updated"></span>
-</header>
+{% include "_nav.html" %}
+<div class="wrap" style="padding-top:10px;padding-bottom:0">
+  <div class="muted" id="updated" style="text-align:right;font-size:12px"></div>
+</div>
 
 <div class="wrap">
   <div class="cards">
