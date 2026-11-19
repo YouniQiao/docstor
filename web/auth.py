@@ -106,6 +106,8 @@ def register_auth(app) -> None:
             return _fail("GitCode 登录未配置：请创建 .gitcode.env（CLIENT_ID / CLIENT_SECRET）。", 503)
         state = secrets.token_urlsafe(24)
         session["oauth_state"] = state
+        nxt = request.args.get("next", "")
+        session["after_login"] = nxt if nxt.startswith("/") and not nxt.startswith("//") else ""
         q = {
             "client_id": cfg["GITCODE_CLIENT_ID"],
             "redirect_uri": cfg["GITCODE_REDIRECT_URI"],
@@ -160,7 +162,7 @@ def register_auth(app) -> None:
             "avatar": u.get("avatar_url") or "",
         }
         session.permanent = True
-        return redirect("/issues")
+        return redirect(session.pop("after_login", "") or "/issues")
 
     @app.get("/auth/logout")
     def auth_logout():

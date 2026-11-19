@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>个人中心 · docstor</title>
+<style>
+  :root{--accent:#2a6df4;--border:#e4e7ec;--muted:#687083;--bg:#f6f7f9;--line:#eef0f3}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:#1f2430;font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
+  header{display:flex;align-items:center;gap:12px;padding:16px 24px;background:#fff;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5}
+  header h1{font-size:17px;margin:0}
+  header a{color:var(--muted);text-decoration:none;font-size:13px}
+  header a:hover{color:var(--accent)}
+  header .sp{flex:1}
+  header .who{color:#1f2430;font-size:13px}
+  .layout{max-width:1124px;margin:22px auto 60px;padding:0 20px;display:flex;gap:18px;align-items:flex-start}
+  .side{width:186px;flex:0 0 186px;background:#fff;border:1px solid var(--border);border-radius:12px;padding:10px}
+  .side .gtitle{color:var(--muted);font-size:12px;padding:6px 10px}
+  .side a{display:block;padding:8px 10px;border-radius:8px;color:#1f2430;text-decoration:none;font-size:13.5px}
+  .side a:hover{background:#f5f7fb}
+  .side a.on{background:#eaf1ff;color:var(--accent);font-weight:600}
+  .side .soon{color:#c2c8d2;font-size:12px;padding:8px 10px}
+  .main{flex:1;min-width:0}
+  .card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:16px}
+  .card h2{font-size:15px;margin:0 0 4px}
+  .card .sub{color:var(--muted);font-size:12.5px;margin-bottom:14px}
+  table{width:100%;border-collapse:collapse;font-size:13.5px}
+  th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
+  th{color:var(--muted);font-weight:500;font-size:12.5px}
+  tr:last-child td{border-bottom:none}
+  .n{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
+  .pill{display:inline-block;padding:1px 8px;border-radius:10px;font-size:12px;background:#eef2f8;color:#4a5160}
+  .pill.ok{background:#e8f6ec;color:#1a7f37}
+  .pill.warn{background:#fff4e5;color:#b25b00}
+  .pill.off{background:#f2f4f7;color:#9aa3b2}
+  input[type=text],input[type=email],select{padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13.5px;background:#fff;color:#1f2430;font-family:inherit}
+  button{padding:8px 14px;border:1px solid var(--border);background:#fff;border-radius:8px;font-size:13.5px;cursor:pointer;color:#1f2430}
+  button:hover{border-color:#c9d2e3}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button.primary:hover{filter:brightness(1.05)}
+  button.danger{color:#d92d20;border-color:#f3d3d0}
+  button:disabled{opacity:.5;cursor:not-allowed}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+  .row + .row{margin-top:10px}
+  .flabel{color:var(--muted);font-size:12.5px;width:64px;flex:0 0 64px}
+  .hint{color:var(--muted);font-size:12.5px}
+  .toast{position:fixed;right:22px;bottom:22px;background:#1f2430;color:#fff;padding:9px 14px;border-radius:8px;font-size:13px;opacity:0;transform:translateY(6px);transition:.2s;pointer-events:none;z-index:9}
+  .toast.on{opacity:1;transform:none}
+  .empty{color:var(--muted);font-size:13px;padding:10px 0}
+  .sw{position:relative;display:inline-block;width:40px;height:22px;cursor:pointer}
+  .sw input{opacity:0;width:0;height:0}
+  .sw span{position:absolute;inset:0;background:#d6dae3;border-radius:22px;transition:.15s}
+  .sw span:before{content:"";position:absolute;width:18px;height:18px;left:2px;top:2px;background:#fff;border-radius:50%;transition:.15s;box-shadow:0 1px 2px rgba(0,0,0,.2)}
+  .sw input:checked+span{background:var(--accent)}
+  .sw input:checked+span:before{transform:translateX(18px)}
+  .kv{display:flex;gap:28px;flex-wrap:wrap}
+  .kv div{font-size:13.5px}
+  .kv b{display:block;font-size:19px;margin-top:2px;font-variant-numeric:tabular-nums}
+  @media(max-width:820px){.layout{flex-direction:column}.side{width:100%;flex:1 1 auto}}
+</style>
+</head>
+<body>
+<header>
+  <h1>个人中心</h1>
+  <span class="who">👤 {{ user.name or user.login }}</span>
+  <span class="sp"></span>
+  <a href="/issues">全量问题 →</a>
+  <a href="/admin">站点管理</a>
+  <a href="/auth/logout">退出</a>
+</header>
+
+<div class="layout">
+  <nav class="side">
+    <div class="gtitle">我的</div>
+    <a href="/me" class="{{ 'on' if tab=='home' else '' }}">概览</a>
+    <a href="/me/subscribe" class="{{ 'on' if tab=='subscribe' else '' }}">邮件订阅</a>
+    <div class="soon">更多类别陆续上线</div>
+  </nav>
+
+  <div class="main">
+  {% if tab == 'home' %}
+    <div class="card">
+      <h2>概览</h2>
+      <div class="sub">账号：{{ user.login }}{% if user.name and user.name != user.login %}（{{ user.name }}）{% endif %}</div>
+      <div class="kv">
+        <div>收件邮箱<b style="font-size:14px">{{ email or '未设置' }}</b>
+          {% if not email %}<span class="pill off">未设置</span>
+          {% elif not active %}<span class="pill off">已退订</span>
+          {% elif verified %}<span class="pill ok">已确认</span>
+          {% else %}<span class="pill warn">待确认</span>{% endif %}
+        </div>
+        <div>订阅条件组<b>{{ groups|length }}</b></div>
+        <div>上次发送<b style="font-size:14px">{{ last_send or '—' }}{% if last_ok is not none %} <span class="pill {{ 'ok' if last_ok else 'warn' }}">{{ '成功' if last_ok else '失败' }}</span>{% endif %}</b></div>
+      </div>
+      <div style="margin-top:16px"><a href="/me/subscribe"><button class="primary">管理邮件订阅</button></a></div>
+    </div>
+  {% else %}
+    <div class="card">
+      <h2>收件邮箱</h2>
+      <div class="sub">每天 8:00 把订阅内容发到这里。首次保存会发一封确认信，点确认按钮后才生效。</div>
+      <div class="row">
+        <input type="email" id="email" placeholder="you@example.com" value="{{ email }}" style="width:300px;margin-right:4px">
+        <button class="primary" id="save-email" style="margin-left:6px">保存并发送确认信</button>
+        <span id="email-state">
+          {% if not email %}<span class="pill off">未设置</span>
+          {% elif not active %}<span class="pill off">已退订</span>
+          {% elif verified %}<span class="pill ok">已确认</span>
+          {% else %}<span class="pill warn">待确认</span>{% endif %}
+        </span>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>订阅条件组</h2>
+      <div class="sub">每组按全量问题的筛选口径统计，组与组之间互不影响；邮件里按组分别列出。最多 20 组。</div>
+      {% if groups %}
+      <table>
+        <thead><tr><th style="width:28%">名称</th><th>条件</th><th class="n" style="width:86px">未解决</th><th class="n" style="width:86px">今日新增</th><th style="width:60px">启用</th><th style="width:76px">操作</th></tr></thead>
+        <tbody>
+        {% for g in groups %}
+          <tr data-id="{{ g.id }}">
+            <td>{{ g.label }}</td>
+            <td><span class="hint">{{ g.summary }}</span></td>
+            <td class="n">{{ '{:,}'.format(g.total) }}</td>
+            <td class="n">{{ '{:,}'.format(g.new) }}</td>
+            <td><label class="sw"><input type="checkbox" class="tg" {{ 'checked' if g.enabled }}><span></span></label></td>
+            <td><button class="danger del">删除</button></td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="empty">还没有订阅条件组，用下面的表单添加第一组。</div>
+      {% endif %}
+    </div>
+
+    <div class="card">
+      <h2>添加条件组</h2>
+      <div class="sub">口径与「全量问题」一致：不选＝全部。可以反复添加多组，实现「多类问题同时订阅」。</div>
+      <div class="row">
+        <span class="flabel">问题归属</span>
+        <select id="a-lang"><option value="">全部语言</option><option value="cn">中文站</option><option value="en">英文站</option></select>
+        <select id="a-section"><option value="">全部板块</option></select>
+        <select id="a-kind" style="display:none"><option value="">指南+API参考</option><option value="guide">仅指南</option><option value="api">仅 API 参考</option></select>
+      </div>
+      <div class="row">
+        <span class="flabel">细分/领域</span>
+        <select id="a-sub"><option value="">全部细分</option></select>
+        <select id="a-domain" disabled><option value="">全部领域</option></select>
+        <select id="a-kit" disabled><option value="">全部 Kit</option></select>
+      </div>
+      <div class="row">
+        <span class="flabel">问题类型</span>
+        <select id="a-rule"><option value="">全部类型</option></select>
+        <select id="a-status"><option value="open" selected>未解决</option><option value="all">全部状态</option></select>
+        <input type="text" id="a-q" placeholder="关键词（问题描述或文档标识）" style="width:240px">
+      </div>
+      <div class="row">
+        <span class="flabel">名称</span>
+        <input type="text" id="a-label" placeholder="不填就自动生成" style="width:320px">
+        <span class="sp" style="flex:1"></span>
+        <span class="hint" id="a-preview">—</span>
+        <button class="primary" id="a-add">添加这组</button>
+      </div>
+    </div>
+  {% endif %}
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script>
+const toastEl = document.getElementById('toast');
+let tt = null;
+function toast(m){ toastEl.textContent = m; toastEl.classList.add('on');
+  clearTimeout(tt); tt = setTimeout(()=>toastEl.classList.remove('on'), 1800); }
+
+const EMAIL_STATE = {{ email_state|tojson }};
+
+{% if tab == 'subscribe' %}
+(async () => {
+  const F = await (await fetch('/api/facets')).json();
+  const SECTIONS = F.sections || [], SUBS = F.subs || [], DOMAINS = F.domains || [],
+        KITS = F.kits || [], RULES = F.rules || [];
+  const $ = id => document.getElementById(id);
+  const qs = id => document.getElementById(id);
+  const esc = s => String(s==null?'':s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  // 板块
+  SECTIONS.forEach(s => qs('a-section').insertAdjacentHTML('beforeend',
+    `<option value="${esc(s.section)}">${esc(s.name)}</option>`));
+  // 类型
+  RULES.forEach(r => qs('a-rule').insertAdjacentHTML('beforeend',
+    `<option value="${esc(r.rule)}">${esc(r.label)}（${r.n}）</option>`));
+
+  function fillSubs(){
+    const lang = qs('a-lang').value, sec = qs('a-section').value;
+    const cur = qs('a-sub').value;
+    qs('a-sub').innerHTML = '<option value="">全部细分</option>';
+    if (!sec){ qs('a-sub').disabled = true; return; }
+    const rows = SUBS.filter(x => x.section === sec && (!lang || x.lang === lang) && (x.n_all||0) >= 0);
+    const seen = new Set();
+    rows.forEach(x => {
+      const key = x.lang + '|' + sec + '|' + x.name;
+      if (seen.has(key)) return; seen.add(key);
+      qs('a-sub').insertAdjacentHTML('beforeend',
+        `<option value="${esc(key)}">${esc(x.name)}（${x.n_all||0}）</option>`);
+    });
+    qs('a-sub').disabled = rows.length === 0;
+    if (cur) qs('a-sub').value = cur;
+  }
+
+  function fillDomains(){
+    const lang = qs('a-lang').value || 'cn', sec = qs('a-section').value;
+    const kitDom = qs('a-domain'), kit = qs('a-kit');
+    kitDom.innerHTML = '<option value="">全部领域</option>';
+    kit.innerHTML = '<option value="">全部 Kit</option>';
+    if (sec !== 'capabilities'){ kitDom.disabled = true; kit.disabled = true; return; }
+    const ds = DOMAINS.filter(x => x.lang === lang && x.section === sec);
+    ds.forEach(x => kitDom.insertAdjacentHTML('beforeend',
+      `<option value="${esc(x.lang+'|'+x.section+'|'+x.name)}">${esc(x.name)}（${x.n_all||0}）</option>`));
+    kitDom.disabled = ds.length === 0;
+    kit.disabled = false;
+    fillKits();
+  }
+
+  function fillKits(){
+    const sel = qs('a-kit'), domVal = qs('a-domain').value;
+    sel.innerHTML = '<option value="">全部 Kit</option>';
+    if (!domVal){ sel.disabled = true; return; }
+    const domName = domVal.split('|')[2];
+    const sec = qs('a-section').value, lang = qs('a-lang').value || 'cn';
+    const rows = KITS.filter(k => k.section === sec && k.domain === domName && k.lang === lang);
+    const seen = new Set();
+    rows.forEach(k => {
+      if (seen.has(k.key)) return; seen.add(k.key);
+      sel.insertAdjacentHTML('beforeend',
+        `<option value="${esc(sec+'|'+k.key)}">${esc(k.name)}（${k.n_all||0}）</option>`);
+    });
+    sel.disabled = rows.length === 0;
+  }
+
+  function params(){
+    const p = { status: qs('a-status').value || 'open' };
+    for (const [k,id] of [['lang','a-lang'],['section','a-section'],['kind','a-kind'],
+                          ['sub','a-sub'],['domain','a-domain'],['kit','a-kit'],
+                          ['rule','a-rule'],['q','a-q']]){
+      const el = qs(id); if (!el) continue;
+      const v = (el.value||'').trim();
+      if (v && !el.disabled) p[k] = v;
+    }
+    if (p.kind === '') delete p.kind;
+    return p;
+  }
+
+  let timer = null;
+  async function preview(){
+    const p = params();
+    try {
+      const r = await fetch('/api/subs/preview?' + new URLSearchParams(p));
+      const d = await r.json();
+      $('a-preview').innerHTML = d.ok
+        ? `当前 <b>${d.total.toLocaleString()}</b> 条问题（今日新增 ${d.new}）`
+        : '条件不合法';
+    } catch(e){ $('a-preview').textContent = '预览失败'; }
+  }
+  const changed = () => { clearTimeout(timer); timer = setTimeout(preview, 250); };
+
+  qs('a-lang').addEventListener('change', () => { fillSubs(); fillDomains(); changed(); });
+  qs('a-section').addEventListener('change', () => {
+    const cap = qs('a-section').value === 'capabilities';
+    qs('a-kind').style.display = cap ? '' : 'none';
+    if (!cap) qs('a-kind').value = '';
+    fillSubs(); fillDomains(); changed();
+  });
+  qs('a-kind').addEventListener('change', changed);
+  qs('a-sub').addEventListener('change', changed);
+  qs('a-domain').addEventListener('change', () => { fillKits(); changed(); });
+  qs('a-kit').addEventListener('change', changed);
+  qs('a-rule').addEventListener('change', changed);
+  qs('a-status').addEventListener('change', changed);
+  qs('a-q').addEventListener('input', changed);
+  fillSubs(); fillDomains(); preview();
+
+  // 从「全量问题」页带过来的筛选：URL 上有同名参数就回填
+  const u = new URLSearchParams(location.search);
+  let touched = false;
+  for (const [k,id] of [['lang','a-lang'],['section','a-section'],['kind','a-kind'],
+                        ['sub','a-sub'],['domain','a-domain'],['kit','a-kit'],
+                        ['rule','a-rule'],['status','a-status'],['q','a-q']]){
+    const v = u.get(k); const el = qs(id);
+    if (!v || !el) continue;
+    if (k === 'section') { el.value = v; el.dispatchEvent(new Event('change')); }
+    if (k === 'status') { el.value = v; }
+    if (k === 'q') el.value = v;
+    touched = true;
+  }
+  if (u.get('section')) qs('a-section').value = u.get('section');
+  fillSubs(); fillDomains();
+  for (const [k,id] of [['lang','a-lang'],['kind','a-kind'],['sub','a-sub'],
+                        ['domain','a-domain'],['kit','a-kit'],['rule','a-rule'],['q','a-q']]){
+    const v = u.get(k); const el = qs(id);
+    if (v && el) el.value = v;
+  }
+  preview();
+
+  qs('a-add').addEventListener('click', async () => {
+    const p = params();
+    const r = await fetch('/api/subs/add', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({params: p, label: qs('a-label').value})});
+    const d = await r.json();
+    if (!d.ok){ toast(d.error || '添加失败'); return; }
+    toast('已添加'); setTimeout(()=>location.reload(), 500);
+  });
+
+  document.querySelectorAll('tr[data-id]').forEach(tr => {
+    const id = tr.dataset.id;
+    tr.querySelector('.del').addEventListener('click', async () => {
+      if (!confirm('删除这条订阅？')) return;
+      const r = await fetch(`/api/subs/${id}/delete`, {method:'POST'});
+      const d = await r.json();
+      if (d.ok){ tr.remove(); toast('已删除'); } else toast('删除失败');
+    });
+    tr.querySelector('.tg').addEventListener('change', async (e) => {
+      const r = await fetch(`/api/subs/${id}/toggle`, {method:'POST',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify({enabled: e.target.checked})});
+      const d = await r.json();
+      toast(d.ok ? (e.target.checked ? '已启用' : '已停用') : '保存失败');
+    });
+  });
+
+  qs('save-email').addEventListener('click', async () => {
+    const email = qs('email').value.trim();
+    const btn = qs('save-email'); btn.disabled = true;
+    const r = await fetch('/api/sub/email', {method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({email})});
+    const d = await r.json(); btn.disabled = false;
+    toast(d.msg || d.error || '保存失败');
+    if (d.ok) {
+      $('email-state').innerHTML = d.verified
+        ? '<span class="pill ok">已确认</span>'
+        : '<span class="pill warn">待确认</span>';
+    }
+  });
+})();
+{% endif %}
+</script>
+</body>
+</html>

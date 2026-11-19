@@ -221,7 +221,11 @@ document.getElementById('f-q').addEventListener('input', () => {
   clearTimeout(qTimer); qTimer = setTimeout(() => { state.page = 1; loadItems(); }, 350);
 });
 
-loadDays();
+loadDays().then(() => {
+  // 支持从外部直接打开某一天：/sync?date=2026-11-19（邮件里的「当天变更记录」链接）
+  const d = new URLSearchParams(location.search).get('date');
+  if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) selectDay(d);
+});
 </script>
 </body>
 </html>

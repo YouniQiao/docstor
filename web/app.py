@@ -19,6 +19,8 @@ sys.path.insert(0, str(BASE))
 
 import checks  # noqa: E402
 import auth as gcauth  # noqa: E402  GitCode 登录（web/auth.py）
+import issueq  # noqa: E402  筛选条件构造（列表/导出/订阅共用）
+import subs as subcenter  # noqa: E402  个人中心 + 邮件订阅
 import ds_catalog
 import ds_db  # noqa: E402
 import ds_alias  # noqa: E402
@@ -239,68 +241,9 @@ def api_doc_issues():
     return jsonify({"issues": issues, "total": len(issues)})
 
 
-def _issue_where() -> tuple[str, list]:
-    """全量问题的筛选条件（列表与导出共用，保证口径一致）。"""
-    a = request.args
-    lang = a.get("lang", "")
-    section = a.get("section", "")
-    rule = a.get("rule", "")
-    sub = a.get("sub", "")
-    domain = a.get("domain", "")
-    kit = a.get("kit", "")
-    kind = a.get("kind", "")
-    status = a.get("status", "open")
-    q = a.get("q", "").strip()
-    dfrom = a.get("dfrom", "").strip()
-    dto = a.get("dto", "").strip()
-
-    where, args = ["1=1"], []
-    if lang:
-        where.append("i.lang=?"); args.append(lang)
-    if section:
-        where.append("i.section=?"); args.append(section)
-    if rule:
-        where.append("i.rule=?"); args.append(rule)
-    if sub:
-        parts = sub.split("|")
-        if len(parts) == 3:
-            where.append("i.doc_key IN (SELECT c.lang||'/'||c.section||'/'||c.slug FROM doc_cat c"
-                         " WHERE c.lang=? AND c.section=? AND c.sub=?)")
-            args += parts
-    # 指南与API参考：按侧边栏二级（领域）筛选
-    if domain:
-        parts = domain.split("|")
-        if len(parts) == 3:
-            where.append("i.doc_key IN (SELECT c.lang||'/'||c.section||'/'||c.slug"
-                         " FROM doc_cat c WHERE c.lang=? AND c.section=? AND c.domain=?)")
-            args += parts
-    # Kit 用归一化名跨语言匹配（中文站 Ability Kit（程序框架服务）= 英文站 Ability Kit）
-    if kit:
-        parts = kit.split("|")
-        if len(parts) == 2:
-            where.append("i.doc_key IN (SELECT c.lang||'/'||c.section||'/'||c.slug"
-                         " FROM doc_cat c WHERE c.section=? AND c.kit_key=?)")
-            args += parts
-        elif len(parts) == 3:      # 兼容旧链接（语言|板块|Kit 原名）
-            where.append("i.doc_key IN (SELECT c.lang||'/'||c.section||'/'||c.slug"
-                         " FROM doc_cat c WHERE c.lang=? AND c.section=? AND c.kit=?)")
-            args += parts
-    if kind in ("api", "guide"):
-        where.append("i.doc_key IN (SELECT doc_key FROM docs WHERE is_api=?)")
-        args.append(1 if kind == "api" else 0)
-    if status and status != "all":
-        where.append("i.status=?"); args.append(status)
-    for val, op in ((dfrom, ">="), (dto, "<=")):
-        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", val or ""):
-            where.append(f"date(i.first_seen) {op} ?")
-            args.append(val)
-    if q:
-        where.append("(i.message LIKE ? OR i.doc_key LIKE ?)")
-        args += [f"%{q}%", f"%{q}%"]
-    fw, fa = _enabled_filter("i.rule")
-    where.append(fw)
-    args += fa
-    return " AND ".join(where), args
+def _issue_where(a=None) -> tuple[str, list]:
+    """全量问题的筛选条件（列表、导出、订阅共用一套口径，见 web/issueq.py）。"""
+    return issueq.issue_where(a if a is not None else request.args, _enabled_filter)
 
 
 @app.get("/api/issues")
@@ -852,6 +795,17 @@ def api_rules_save():
 @app.get("/issues")
 def issues_page():
     return render_template("issues.html", rule_labels={k: v["label"] for k, v in checks.REGISTRY.items()})
+
+
+# ── 个人中心 / 邮件订阅 ──────────────────────────────────────────
+SITE_URL = os.environ.get("DOCSTOR_SITE_URL") or "https://docstor.openharmony.cool"
+try:
+    subcenter.ensure_schema(_db.conn)
+    subcenter.register(
+        app, str(DB_PATH), where_fn=lambda a: _issue_where(a),
+        section_names=SECTION_NAMES, rule_label=checks.rule_label, site_url=SITE_URL)
+except Exception as e:  # noqa: BLE001  订阅起不来不能拖垮主站
+    app.logger.warning("邮件订阅模块初始化失败: %s", e)
 
 
 @app.get("/healthz")
