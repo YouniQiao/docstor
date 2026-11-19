@@ -137,7 +137,11 @@
 
     <div class="card">
       <h2>添加条件组</h2>
-      <div class="sub">口径与「全量问题」一致：不选＝全部。可以反复添加多组，实现「多类问题同时订阅」。</div>
+      <div class="sub">订阅的都是「未解决」的问题；口径与「全量问题」一致，不选＝全部。可以反复添加多组，实现「多类问题同时订阅」。</div>
+      <div class="row">
+        <span class="flabel">问题类型</span>
+        <select id="a-rule"><option value="">全部类型</option></select>
+      </div>
       <div class="row">
         <span class="flabel">问题归属</span>
         <select id="a-lang"><option value="">全部语言</option><option value="cn">中文站</option><option value="en">英文站</option></select>
@@ -145,16 +149,10 @@
         <select id="a-kind" style="display:none"><option value="">指南+API参考</option><option value="guide">仅指南</option><option value="api">仅 API 参考</option></select>
       </div>
       <div class="row">
-        <span class="flabel">细分/领域</span>
+        <span class="flabel"></span>
         <select id="a-sub"><option value="">全部细分</option></select>
         <select id="a-domain" disabled><option value="">全部领域</option></select>
         <select id="a-kit" disabled><option value="">全部 Kit</option></select>
-      </div>
-      <div class="row">
-        <span class="flabel">问题类型</span>
-        <select id="a-rule"><option value="">全部类型</option></select>
-        <select id="a-status"><option value="open" selected>未解决</option><option value="all">全部状态</option></select>
-        <input type="text" id="a-q" placeholder="关键词（问题描述或文档标识）" style="width:240px">
       </div>
       <div class="row">
         <span class="flabel">名称</span>
@@ -241,15 +239,14 @@ const EMAIL_STATE = {{ email_state|tojson }};
   }
 
   function params(){
-    const p = { status: qs('a-status').value || 'open' };
+    const p = { status: 'open' };          // 订阅的都是未解决问题，不开放状态选择
     for (const [k,id] of [['lang','a-lang'],['section','a-section'],['kind','a-kind'],
                           ['sub','a-sub'],['domain','a-domain'],['kit','a-kit'],
-                          ['rule','a-rule'],['q','a-q']]){
+                          ['rule','a-rule']]){
       const el = qs(id); if (!el) continue;
       const v = (el.value||'').trim();
       if (v && !el.disabled) p[k] = v;
     }
-    if (p.kind === '') delete p.kind;
     return p;
   }
 
@@ -278,27 +275,22 @@ const EMAIL_STATE = {{ email_state|tojson }};
   qs('a-domain').addEventListener('change', () => { fillKits(); changed(); });
   qs('a-kit').addEventListener('change', changed);
   qs('a-rule').addEventListener('change', changed);
-  qs('a-status').addEventListener('change', changed);
-  qs('a-q').addEventListener('input', changed);
   fillSubs(); fillDomains(); preview();
 
   // 从「全量问题」页带过来的筛选：URL 上有同名参数就回填
   const u = new URLSearchParams(location.search);
   let touched = false;
-  for (const [k,id] of [['lang','a-lang'],['section','a-section'],['kind','a-kind'],
+  for (const [k,id] of [['lang','a-lang'],['kind','a-kind'],
                         ['sub','a-sub'],['domain','a-domain'],['kit','a-kit'],
-                        ['rule','a-rule'],['status','a-status'],['q','a-q']]){
+                        ['rule','a-rule']]){
     const v = u.get(k); const el = qs(id);
     if (!v || !el) continue;
-    if (k === 'section') { el.value = v; el.dispatchEvent(new Event('change')); }
-    if (k === 'status') { el.value = v; }
-    if (k === 'q') el.value = v;
     touched = true;
   }
   if (u.get('section')) qs('a-section').value = u.get('section');
   fillSubs(); fillDomains();
   for (const [k,id] of [['lang','a-lang'],['kind','a-kind'],['sub','a-sub'],
-                        ['domain','a-domain'],['kit','a-kit'],['rule','a-rule'],['q','a-q']]){
+                        ['domain','a-domain'],['kit','a-kit'],['rule','a-rule']]){
     const v = u.get(k); const el = qs(id);
     if (v && el) el.value = v;
   }
