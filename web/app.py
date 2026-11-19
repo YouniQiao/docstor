@@ -181,16 +181,35 @@ def favicon():
 
 
 # ---------------- API ----------------
+def _preview_rule() -> str:
+    """管理员调试预览时（?preview=<rule>），让这条检查项穿透可见性过滤。
+
+    只认后台 cookie，普通用户带这个参数无效，避免调试中的规则被外部看到。
+    """
+    r = (request.args.get("preview") or "").strip()
+    if not r or r not in checks.REGISTRY:
+        return ""
+    try:
+        return r if is_admin() else ""
+    except Exception:  # noqa: BLE001
+        return ""
+
+
 def _enabled_rules() -> list[str]:
-    """对外可见的检查项（enabled & visible）。
+    """当前请求可见的检查项（enabled & visible，预览时再加一条）。
 
     关闭的、以及「调试中」（跑但不对外）的检查项都不进全量问题：
     卡片、列表、侧栏、文档问题面板、facets、导出、订阅预览一律不显示。
+    管理员带 ?preview=<rule> 时，额外允许这一条（调试预览页用）。
     """
     try:
-        return ds_rules.visible_rules(conn(), checks.REGISTRY)
+        rules = ds_rules.visible_rules(conn(), checks.REGISTRY)
     except Exception:  # noqa: BLE001
-        return []
+        rules = []
+    pv = _preview_rule()
+    if pv and pv not in rules:
+        rules = rules + [pv]
+    return rules
 
 
 def _enabled_filter(col: str = "rule") -> tuple[str, list]:
@@ -299,14 +318,15 @@ def api_issues():
 def api_issue_ignore(iid: int):
     """人工忽略一条问题（需 GitCode 登录）。记录忽略人与时间。"""
     user = gcauth.current_user()
-    if not user:
+    by = gcauth.login_name() if user else ("后台（管理员）" if is_admin() else "")
+    if not by:
         return jsonify({"ok": False, "need_login": True, "error": "请先用 GitCode 登录"}), 401
     row = _db.get_issue(iid)
     if row is None:
         return jsonify({"ok": False, "error": "问题不存在"}), 404
     if row["status"] == "resolved":
         return jsonify({"ok": False, "error": "已解决的问题不能忽略"}), 400
-    _db.set_ignored(iid, gcauth.login_name())
+    _db.set_ignored(iid, by)
     cur = _db.get_issue(iid)
     return jsonify({"ok": True, "id": iid, "status": cur["status"],
                     "ignored_by": cur["ignored_by"], "ignored_at": cur["ignored_at"]})
@@ -315,7 +335,7 @@ def api_issue_ignore(iid: int):
 @app.post("/api/issues/<int:iid>/unignore")
 def api_issue_unignore(iid: int):
     """取消忽略，回到未解决（需 GitCode 登录）。"""
-    if not gcauth.current_user():
+    if not gcauth.current_user() and not is_admin():
         return jsonify({"ok": False, "need_login": True, "error": "请先用 GitCode 登录"}), 401
     if not _db.clear_ignored(iid):
         return jsonify({"ok": False, "error": "这条问题不是已忽略状态"}), 400
@@ -816,11 +836,13 @@ def api_rules_save():
 
 
 # ── 检查项调试预览（仅后台） ─────────────────────────────────────
+# 预览页就是「全量问题」页本体（同一套卡片 / 筛选 / 列表），只是允许把这条
+# 调试中的检查项放进来（?preview=<rule>），并在顶部多一条工具栏。
 LOGS = BASE / "logs"
 
 
 def _rule_state(rule: str) -> tuple[str, list[str]]:
-    """(对外状态, 生效语言)：off=停用 / live=对外 / debug=调试中。"""
+    """(状态, 生效语言)：off=停用 / live=对外 / debug=调试中。"""
     meta = checks.REGISTRY[rule]
     row = conn().execute("SELECT enabled, visible, langs FROM rule_settings WHERE rule=?",
                          (rule,)).fetchone()
@@ -853,122 +875,25 @@ def _rule_run_state(rule: str) -> dict | None:
     return d
 
 
-def _locator_fields(loc: str | None) -> dict:
-    try:
-        d = json.loads(loc or "{}")
-    except Exception:  # noqa: BLE001
-        return {}
-    if not isinstance(d, dict):
-        return {}
-    return {"link_text": d.get("text") or d.get("anchor_text") or "",
-            "href": d.get("href") or d.get("target") or "",
-            "anchor": d.get("anchorId") or "",
-            "line": d.get("line")}
-
-
 @app.get("/admin/rule/<rule>")
 def admin_rule_page(rule: str):
     if not is_admin():
         return redirect(url_for("admin_page"))
     if rule not in checks.REGISTRY:
         abort(404)
-    st, _langs = _rule_state(rule)
+    st, langs = _rule_state(rule)
     c = conn()
-    one = lambda sql, a=(): c.execute(sql, a).fetchone()[0]  # noqa: E731
-    n_open = one("SELECT COUNT(*) FROM issues WHERE rule=? AND status='open'", (rule,))
-    n_ign = one("SELECT COUNT(*) FROM issues WHERE rule=? AND status='ignored'", (rule,))
-    n_new = one("SELECT COUNT(*) FROM issues WHERE rule=? AND status='open'"
-                " AND date(first_seen)=date('now','localtime')", (rule,))
-    last_seen = one("SELECT MAX(last_seen) FROM issues WHERE rule=?", (rule,))
-    sections = [{"name": SECTION_NAMES.get(r["section"], r["section"]), "n": r["n"]}
-                for r in c.execute("SELECT section, COUNT(*) n FROM issues WHERE rule=?"
-                                   " AND status='open' GROUP BY section ORDER BY n DESC LIMIT 6",
-                                   (rule,))]
-    langs = [{"name": r["lang"], "n": r["n"]}
-             for r in c.execute("SELECT lang, COUNT(*) n FROM issues WHERE rule=?"
-                                " AND status='open' GROUP BY lang ORDER BY n DESC", (rule,))]
-    return render_template("rule_preview.html", rule=rule,
-                           label=checks.REGISTRY[rule]["label"], state=st,
-                           n_open=n_open, n_ign=n_ign, n_new=n_new,
-                           last_seen=last_seen, sections=sections, langs=langs,
-                           run=_rule_run_state(rule))
-
-
-@app.get("/api/admin/rule/<rule>/issues")
-def api_admin_rule_issues(rule: str):
-    if not is_admin():
-        return jsonify({"ok": False, "error": "未登录"}), 403
-    if rule not in checks.REGISTRY:
-        return jsonify({"ok": False, "error": "没有这条规则"}), 404
-    status = request.args.get("status", "open")
-    if status not in ("open", "ignored", "all"):
-        status = "open"
-    try:
-        page = max(1, int(request.args.get("page", 1)))
-        size = min(200, max(10, int(request.args.get("size", 50))))
-    except ValueError:
-        page, size = 1, 50
-    where, args = "i.rule=?", [rule]
-    if status != "all":
-        where += " AND i.status=?"
-        args.append(status)
-    c = conn()
-    total = c.execute(f"SELECT COUNT(*) FROM issues i WHERE {where}", args).fetchone()[0]
-    rows = c.execute(
-        f"""SELECT i.id, i.doc_key, i.lang, i.section, i.message, i.evidence, i.locator,
-                   i.first_seen, i.last_seen, i.status, i.severity,
-                   d.title, d.url AS doc_url
-            FROM issues i LEFT JOIN docs d ON d.doc_key=i.doc_key
-            WHERE {where}
-            ORDER BY date(i.first_seen) DESC, i.id DESC LIMIT ? OFFSET ?""",
-        args + [size, (page - 1) * size]).fetchall()
-    items = []
-    for r in rows:
-        it = dict(r)
-        it.update(_locator_fields(r["locator"]))
-        ev = (it.get("evidence") or "").strip()
-        if ev.startswith(("{", "[")):   # 证据是 JSON 时前端只显示「第 N 行」，避免一坨花括号
-            it["evidence"] = ""
-        items.append(it)
-    pages = max(1, (total + size - 1) // size)
-    return jsonify({"ok": True, "total": total, "page": page, "pages": pages, "items": items})
-
-
-def _admin_rule_issue(rule: str):
-    """校验 issue 属于这条规则，返回 (id, 错误响应或 None)。"""
-    data = request.get_json(silent=True) or {}
-    try:
-        iid = int(data.get("id") or 0)
-    except (TypeError, ValueError):
-        iid = 0
-    if not iid:
-        return 0, (jsonify({"ok": False, "error": "缺少 id"}), 400)
-    row = conn().execute("SELECT rule, status FROM issues WHERE id=?", (iid,)).fetchone()
-    if not row or row["rule"] != rule:
-        return 0, (jsonify({"ok": False, "error": "问题不存在或不属于该检查项"}), 404)
-    return iid, None
-
-
-@app.post("/api/admin/rule/<rule>/ignore")
-def api_admin_rule_ignore(rule: str):
-    if not is_admin():
-        return jsonify({"ok": False, "error": "未登录"}), 403
-    iid, err = _admin_rule_issue(rule)
-    if err:
-        return err
-    n = _db.set_ignored(iid, "后台（管理员）")
-    return jsonify({"ok": bool(n)})
-
-
-@app.post("/api/admin/rule/<rule>/unignore")
-def api_admin_rule_unignore(rule: str):
-    if not is_admin():
-        return jsonify({"ok": False, "error": "未登录"}), 403
-    iid, err = _admin_rule_issue(rule)
-    if err:
-        return err
-    n = _db.clear_ignored(iid)
-    return jsonify({"ok": bool(n)})
+    n_open = c.execute("SELECT COUNT(*) FROM issues WHERE rule=? AND status='open'",
+                       (rule,)).fetchone()[0]
+    n_ign = c.execute("SELECT COUNT(*) FROM issues WHERE rule=? AND status='ignored'",
+                      (rule,)).fetchone()[0]
+    return render_template(
+        "issues.html",
+        rule_labels={k: v["label"] for k, v in checks.REGISTRY.items()},
+        is_admin_user=True,
+        preview={"rule": rule, "label": checks.REGISTRY[rule]["label"], "state": st,
+                 "langs": langs, "n_open": n_open, "n_ign": n_ign,
+                 "run": _rule_run_state(rule)})
 
 
 @app.post("/api/admin/rule/<rule>/run")

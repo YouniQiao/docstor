@@ -83,12 +83,35 @@
   .login-hint{color:var(--accent);font-size:12px;text-decoration:none;white-space:nowrap}
   .login-hint:hover{text-decoration:underline}
   .empty{text-align:center;color:var(--muted);padding:40px 0;background:#fff;border:1px solid var(--border);border-radius:10px}
+  .pvbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:14px 0 10px;padding:9px 12px;
+         background:#f7f9fc;border:1px solid var(--border);border-radius:10px;font-size:13px}
+  .pvtag{padding:1px 8px;border-radius:9px;background:#eef4ff;color:#2a6df4;font-size:11.5px}
+  .pvtag.live{background:#eaf7ee;color:#1a7f37}
+  .pvtag.off{background:#f2f3f5;color:#687083}
+  .pvbar button{border:1px solid var(--border);background:#fff;border-radius:7px;padding:4px 10px;
+                font-size:12.5px;color:#2f3542;cursor:pointer}
+  .pvbar button:hover{border-color:var(--accent);color:var(--accent)}
+  .pvbar button:disabled{color:#c2c8d2;cursor:default;border-color:var(--border)}
+  .pvbar a.pvback{color:var(--muted);text-decoration:none;font-size:12.5px}
+  .pvbar a.pvback:hover{color:var(--accent)}
 </style>
 </head>
 <body>
 {% include "_nav.html" %}
 
 <div class="wrap">
+  {% if preview %}
+  <div class="pvbar">
+    <span class="pvtag {{ preview.state }}">
+      {{ '调试中 · 不对外' if preview.state == 'debug' else ('对外' if preview.state == 'live' else '停用') }}</span>
+    <b>调试预览 · {{ preview.label }}</b>
+    <span class="meta">这条检查项的问题不会出现在对外页面、导出和订阅日报中</span>
+    <span style="flex:1"></span>
+    {% if preview.run %}<span class="meta">上次手动运行 {{ preview.run.started_at }}{% if preview.run.running %} · 运行中…{% endif %}</span>{% endif %}
+    <button id="pv-run" {{ 'disabled title="检查项已停用，先到「检查项开关」启用"' if preview.state == 'off' }}>只跑这条规则</button>
+    <a class="pvback" href="/admin">← 检查项开关</a>
+  </div>
+  {% endif %}
   <div class="cards" id="cards"></div>
 
   <div class="filters">
@@ -149,6 +172,8 @@
 
 <script>
 const RULE_LABELS = {{ rule_labels|tojson }};
+const PREVIEW = {{ (preview or none)|tojson }};      // 调试预览：{rule,label,state,...} 或 null
+const IS_ADMIN = {{ 1 if is_admin_user else 0 }};
 const state = { page: 1, size: 50, total: 0, pages: 0 };
 
 // 链接类问题：描述后面接「原文链接文字 + 原文地址」的超链接；图片类问题：直接显示图片
@@ -186,7 +211,7 @@ async function loadMe(){        // 仅用于「忽略/恢复」按钮的权限�
 }
 
 function opCell(it){
-  if (!ME.user) return ME.enabled
+  if (!ME.user && !IS_ADMIN) return ME.enabled
     ? '<a class="login-hint" href="/auth/login" title="用 GitCode 登录后可以忽略问题">请先登录</a>'
     : '<span class="meta">—</span>';
   if (it.status === 'ignored') return `<button class="mini2" data-act="unignore" data-id="${it.id}">恢复</button>`;
@@ -211,7 +236,8 @@ document.getElementById('list').addEventListener('click', e => {
 });
 
 async function loadFacets(){
-  const d = await (await fetch('/api/facets')).json();
+  const fu = '/api/facets' + (PREVIEW ? '?preview=' + encodeURIComponent(PREVIEW.rule) : '');
+  const d = await (await fetch(fu)).json();
   // 重建下拉会把已选值冲掉（忽略/恢复后要留在当前视图，不能跳回全量列表）
   const keep = {
     rule: document.getElementById('f-rule').value,
@@ -388,6 +414,7 @@ function query(){
   const d2 = document.getElementById('f-d2').value;
   if (d1) p.set('dfrom', d1);
   if (d2) p.set('dto', d2);
+  if (PREVIEW) p.set('preview', PREVIEW.rule);   // 让后端放行这条调试中的检查项
   return p.toString();
 }
 
@@ -532,7 +559,34 @@ function applyQuery(){
   if (pg > 1) state.page = pg;
 }
 
-loadMe().then(loadFacets).then(applyQuery).then(loadList);
+if (PREVIEW) {
+  const sub = document.getElementById('f-subscribe');   // 调试中的规则不能订阅，避免建出空关注范围
+  if (sub) sub.style.display = 'none';
+  const b = document.getElementById('pv-run');
+  if (b) b.onclick = async () => {
+    b.disabled = true;
+    const d = await (await fetch(`/api/admin/rule/${encodeURIComponent(PREVIEW.rule)}/run`,
+                                 {method: 'POST'})).json();
+    pvToast(d.ok ? '已开始检查，完成后刷新本页看新数字' : ('启动失败：' + (d.error || '')));
+    setTimeout(() => { b.disabled = false; }, 3000);
+  };
+}
+let pvTimer = null;
+function pvToast(msg){
+  let el = document.getElementById('pv-toast');
+  if (!el){ el = document.createElement('div'); el.id = 'pv-toast';
+    el.style.cssText = 'position:fixed;right:22px;bottom:22px;background:#1f2430;color:#fff;'
+      + 'padding:9px 14px;border-radius:8px;font-size:13px;opacity:0;transition:.2s;z-index:99';
+    document.body.appendChild(el); }
+  el.textContent = msg;
+  requestAnimationFrame(() => { el.style.opacity = 1; });
+  clearTimeout(pvTimer);
+  pvTimer = setTimeout(() => { el.style.opacity = 0; }, 2200);
+}
+loadMe().then(loadFacets)
+  .then(() => { if (PREVIEW && !document.getElementById('f-rule').value)
+                  document.getElementById('f-rule').value = PREVIEW.rule; })
+  .then(applyQuery).then(loadList);
 </script>
 </body>
 </html>
