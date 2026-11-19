@@ -375,11 +375,23 @@ def check_external(doc, ctx):
 AUTO_ID_RE = re.compile(
     r"^(?:[a-z]{2}[-_][a-z]{2}_topic_\d+|section\d{3,}|(?:li|ul|p|div|span|table|img|h[1-6])\d{3,})",
     re.I)
+# AGC / UX 这类老页面的小节 id 就是 section+编号，页面改版会重排 → 这类锚点会烂掉。
+# 过去一律当「自动生成、无法核实」跳过；现在只要目标页锚点清单里本来就有这种编号，就能精确比对。
+_SECTION_ID_RE = re.compile(r"^section\d{3,}$", re.I)
+
+
+def _page_section_ids(ctx, lang: str, section: str, slug: str) -> set[str]:
+    """目标页锚点清单里 section12345 这种编号型 id（页面不用这套编号就返回空集）。"""
+    idx = _anchor_index(ctx, lang, section)
+    if not idx:
+        return set()
+    return {a for a in (idx.get(slug) or ()) if _SECTION_ID_RE.match(str(a).strip())}
 
 
 @register("link.anchor", label="锚点失效")
 def check_anchor(doc, ctx):
     out = []
+    seen = set()
     for line_no, target, text, _html in iter_links(ctx.text):
         m = INTERNAL_RE.match(target or "")
         if not m:
@@ -389,8 +401,14 @@ def check_anchor(doc, ctx):
             continue
         if _target_exists(ctx, lang, section, slug) and not _anchor_exists(
                 ctx, lang, section, slug, frag):
-            if AUTO_ID_RE.match(unquote(frag or "")):
-                continue                  # 自动生成的 id，无法核实
+            frag_u = unquote(frag or "").strip()
+            if AUTO_ID_RE.match(frag_u):
+                # 编号型锚点（section12345）：目标页确实用这套编号才能比对，否则仍是无法核实
+                if not (_SECTION_ID_RE.match(frag_u) and _page_section_ids(ctx, lang, section, slug)):
+                    continue
+            if (target, frag) in seen:        # 同一篇里同一个锚点只报一条
+                continue
+            seen.add((target, frag))
             title, aid = ctx.anchor_for_line(line_no)
             out.append(Issue("link.anchor",
                              f"锚点在目标文档中不存在：{target}",
