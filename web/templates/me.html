@@ -91,7 +91,7 @@
           {% elif verified %}<span class="pill ok">已确认</span>
           {% else %}<span class="pill warn">待确认</span>{% endif %}
         </div>
-        <div>订阅条件组<b>{{ groups|length }}</b></div>
+        <div>关注范围<b>{{ groups|length }}</b></div>
         <div>上次发送<b style="font-size:14px">{{ last_send or '—' }}{% if last_ok is not none %} <span class="pill {{ 'ok' if last_ok else 'warn' }}">{{ '成功' if last_ok else '失败' }}</span>{% endif %}</b></div>
       </div>
       <div style="margin-top:16px"><a href="/me/subscribe"><button class="primary">管理邮件订阅</button></a></div>
@@ -113,8 +113,8 @@
     </div>
 
     <div class="card">
-      <h2>订阅条件组</h2>
-      <div class="sub">每组按全量问题的筛选口径统计，组与组之间互不影响；邮件里按组分别列出。最多 20 组。</div>
+      <h2>我关注的问题</h2>
+      <div class="sub">每个关注范围按全量问题的筛选口径统计，范围之间互不影响；邮件里按范围分别列出。最多 20 个。</div>
       {% if groups %}
       <table>
         <thead><tr><th style="width:28%">名称</th><th>条件</th><th class="n" style="width:86px">未解决</th><th class="n" style="width:86px">今日新增</th><th style="width:60px">启用</th><th style="width:76px">操作</th></tr></thead>
@@ -132,13 +132,13 @@
         </tbody>
       </table>
       {% else %}
-      <div class="empty">还没有订阅条件组，用下面的表单添加第一组。</div>
+      <div class="empty">还没有关注范围，用下面的表单新建一个。</div>
       {% endif %}
     </div>
 
     <div class="card">
-      <h2>添加条件组</h2>
-      <div class="sub">订阅的都是「未解决」的问题；口径与「全量问题」一致，不选＝全部。可以反复添加多组，实现「多类问题同时订阅」。</div>
+      <h2>添加关注范围</h2>
+      <div class="sub">关注的都是「未解决」的问题；口径与「全量问题」一致，不选＝全部。可以建多个关注范围，邮件里分别列出。</div>
       <div class="row">
         <span class="flabel">问题类型</span>
         <select id="a-rule"><option value="">全部类型</option></select>
@@ -164,7 +164,7 @@
         <input type="text" id="a-label" placeholder="不填就自动生成" style="width:320px">
         <span class="sp" style="flex:1"></span>
         <span class="hint" id="a-preview">—</span>
-        <button class="primary" id="a-add">添加这组</button>
+        <button class="primary" id="a-add">添加关注范围</button>
       </div>
     </div>
   {% endif %}
@@ -323,7 +323,7 @@ const EMAIL_STATE = {{ email_state|tojson }};
   document.querySelectorAll('tr[data-id]').forEach(tr => {
     const id = tr.dataset.id;
     tr.querySelector('.del').addEventListener('click', async () => {
-      if (!confirm('删除这条订阅？')) return;
+      if (!confirm('删除这个关注范围？')) return;
       const r = await fetch(`/api/subs/${id}/delete`, {method:'POST'});
       const d = await r.json();
       if (d.ok){ tr.remove(); toast('已删除'); } else toast('删除失败');

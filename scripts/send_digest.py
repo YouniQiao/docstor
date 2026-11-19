@@ -162,7 +162,7 @@ def build_html(user_name: str, groups: list[dict], changes: dict, day: str,
   <tr><td style="padding:22px 24px 6px">
     <div style="font-size:17px;font-weight:700">华为文档质量日报 · {d.month} 月 {d.day} 日（周{WEEK[d.weekday()]}）</div>
     <div style="color:#687083;font-size:12.5px;margin-top:4px">
-      {_esc(user_name)}，你订阅了 {len(groups)} 组条件 ·
+      {_esc(user_name)}，你关注了 {len(groups)} 个范围 ·
       未解决 <b style="color:#1f2430">{total_open:,}</b> 条 · 今日新增
       <b style="color:{'#d92d20' if total_new else '#1f2430'}">{total_new:,}</b> 条
     </div>
@@ -209,7 +209,7 @@ def build_html(user_name: str, groups: list[dict], changes: dict, day: str,
         <div style="font-size:14.5px;font-weight:700">{label}</div>
         <div style="color:#687083;font-size:12.5px;margin-top:2px">{cond}</div>
         <div style="margin-top:8px;font-size:13px">
-          本组未解决 <b>{g['total']:,}</b> 条 · 今日新增
+          本范围未解决 <b>{g['total']:,}</b> 条 · 今日新增
           <b style="color:{'#d92d20' if g['new'] else '#1f2430'}">{g['new']:,}</b> 条
           <a href="{all_link}" style="color:#2a6df4;text-decoration:none;font-size:12.5px;margin-left:14px">查看全部 →</a>
         </div>
@@ -223,7 +223,7 @@ def build_html(user_name: str, groups: list[dict], changes: dict, day: str,
   <tr><td style="padding:20px 24px 24px">
     <div style="border-top:1px solid #eef0f3;padding-top:14px;color:#9aa3b2;font-size:12px;line-height:1.9">
       这封邮件每天早上 8:00 发送 · 数据来自华为开发者文档中心镜像检查<br>
-      <a href="{SITE}/me/subscribe" style="color:#9aa3b2">调整订阅条件</a> ·
+      <a href="{SITE}/me/subscribe" style="color:#9aa3b2">调整关注范围</a> ·
       <a href="{unsub}" style="color:#9aa3b2">不再接收（一键退订）</a> ·
       <a href="{SITE}/issues" style="color:#9aa3b2">打开全量问题</a>
     </div>
@@ -285,7 +285,7 @@ def main() -> int:
     changes = doc_changes(c, args.date)
 
     if args.to:
-        # 测试发送：取第一个已确认订阅者的条件组；没有就用「全部未解决」搭一个
+        # 测试发送：取第一个已确认订阅者的关注范围；没有就用「全部未解决」搭一个
         u = c.execute("SELECT * FROM sub_users WHERE active=1 AND verified_at IS NOT NULL LIMIT 1").fetchone()
         if u:
             targets = collect_for(c, where_fn, ef, args.date, u["login"])

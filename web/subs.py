@@ -2,18 +2,18 @@
 
 路由：
   GET  /me                     个人中心（左侧类别：邮件订阅；后续可加别的类别）
-  GET  /me/subscribe           邮件订阅：收件邮箱 + 条件组管理
+  GET  /me/subscribe           邮件订阅：收件邮箱 + 关注范围管理
   POST /api/sub/email          保存邮箱并发确认信
   GET  /me/confirm?token=…     确认订阅（邮件里的链接）
   GET  /me/unsubscribe?token=… 退订（邮件底部的链接）
-  POST /api/subs/add           新增条件组 {label, query}
+  POST /api/subs/add           新增关注范围 {label, query}
   POST /api/subs/<id>/delete   删除
   POST /api/subs/<id>/toggle   启用/停用
   GET  /api/subs/preview       按全量问题的筛选参数预览条数
 
 设计要点：
   · 一个 GitCode 账号绑一个收件邮箱；邮箱要点确认信里的链接才算生效。
-  · 每条订阅是一个「条件组」，参数与全量问题页完全一致（复用 web/issueq.issue_where），
+  · 每条订阅是一个「关注范围」，参数与全量问题页完全一致（复用 web/issueq.issue_where），
     组之间并集：邮件里按组分别列出，各自数量互不覆盖。
 """
 from __future__ import annotations
@@ -281,7 +281,7 @@ def register(app, db_path: str, where_fn, section_names: dict, rule_label, site_
         finally:
             conn.close()
 
-    # ── 订阅条件组 ────────────────────────────────────────────────
+    # ── 关注范围 ────────────────────────────────────────────────
     @bp.get("/api/subs/preview")
     def api_preview():
         if not me():
@@ -309,7 +309,7 @@ def register(app, db_path: str, where_fn, section_names: dict, rule_label, site_
         query = urlencode(params)
         total = _count(params)
         if total <= 0:
-            return jsonify({"ok": False, "error": "这组条件下没有问题，不用订阅"}), 400
+            return jsonify({"ok": False, "error": "这个关注范围下没有问题，不用关注"}), 400
         label = (data.get("label") or "").strip() or describe(params, section_names, rule_label)
         conn = db()
         try:
@@ -318,7 +318,7 @@ def register(app, db_path: str, where_fn, section_names: dict, rule_label, site_
                 return jsonify({"ok": False, "error": "最多 20 条订阅，先删掉不用的"}), 400
             dup = conn.execute("SELECT id FROM subs WHERE login=? AND query=?", (u["login"], query)).fetchone()
             if dup:
-                return jsonify({"ok": False, "error": "这条订阅已经存在"}), 400
+                return jsonify({"ok": False, "error": "这个关注范围已经存在"}), 400
             conn.execute("INSERT INTO subs(login,label,query,summary,enabled,created_at) VALUES(?,?,?,?,1,?)",
                          (u["login"], label, query,
                           describe(params, section_names, rule_label), _now()))
@@ -380,7 +380,7 @@ def _confirm_mail_html(name: str, link: str, site: str) -> str:
   </td></tr>
   <tr><td style="padding:6px 28px 0;font:14px/1.8 -apple-system,'PingFang SC','Microsoft YaHei',sans-serif;color:#4a5160;">
     {name}，你好：<br>
-    你正在订阅华为文档质量日报。确认后，每天早上 <b>8:00</b> 会按你设置的条件组，
+    你正在订阅华为文档质量日报。确认后，每天早上 <b>8:00</b> 会按你设置的关注范围，
     把问题数量、新增明细和当天文档变更发到这个邮箱。
   </td></tr>
   <tr><td style="padding:22px 28px 4px;">
