@@ -121,7 +121,15 @@ def require_admin(fn):
 # ---------------- 静态站点 ----------------
 @app.route("/")
 def index():
-    return send_from_directory(SITE, "index.html")
+    """文档站首页：docsify 的静态入口，注入与 /issues /sync /me 同一套顶栏。"""
+    html = (SITE / "index.html").read_text(encoding="utf-8")
+    nav = render_template("_nav.html")
+    if "<!--DOCSTOR_NAV-->" in html:
+        html = html.replace("<!--DOCSTOR_NAV-->", nav, 1)
+    else:
+        html = html.replace("<body>", "<body>\n" + nav, 1)
+    return html, 200, {"Content-Type": "text/html; charset=utf-8",
+                       "Cache-Control": "no-cache, must-revalidate"}
 
 
 def _find_doc_section(lang: str, slug: str) -> str:

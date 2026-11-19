@@ -147,3 +147,17 @@ a.ds-btn{text-decoration:none;display:inline-flex;align-items:center;line-height
 .ds-panel.open ~ .ds-toc{display:none}
 body.toc-on .content{max-width:calc(100vw - var(--ds-sidebar-w) - 300px)}
 @media (max-width:1279px){ .ds-toc{display:none} body.toc-on .content{max-width:none} }
+
+/* ── 全站顶栏（Flask 在 "/" 注入 web/templates/_nav.html）──
+   文档站是 docsify，侧栏/正文/问题面板/工具条都是绝对或固定定位，整体下移 54px 让开顶栏 */
+.sidebar{top:54px}
+body > header.tnav{position:fixed;left:0;right:0;top:0;z-index:100}   /* 选择器压过 _nav.html 里的 sticky */   /* 顶栏脱离文档流，正文/侧栏按 54px 让位 */
+.content{top:54px}
+.ds-resizer{top:54px}
+.ds-panel{top:54px}
+.ds-topbar{top:66px}
+.ds-toc{top:126px;max-height:calc(100vh - 158px)}
+@media (max-width:900px){
+  .content{top:0;padding-top:74px}   /* 窄屏 .content 变 static，只能靠内边距让开 */
+  .sidebar{top:54px}
+}

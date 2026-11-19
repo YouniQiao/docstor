@@ -535,8 +535,7 @@
     // 文案全部交给 updateTopbar() 按当前语言刷新，这里只搭骨架
     bar.innerHTML =
       '<button class="ds-btn" id="ds-lang">EN</button>' +
-      '<button class="ds-btn primary" id="ds-issues-btn">本页问题 <b>0</b></button>' +
-      '<a class="ds-btn primary" id="ds-all-issues" href="/issues">全量问题</a>';
+      '<button class="ds-btn primary" id="ds-issues-btn">本页问题 <b>0</b></button>';
     document.body.appendChild(bar);
 
     document.getElementById('ds-lang').onclick = switchLang;
@@ -570,12 +569,6 @@
     if (btn) {
       btn.innerHTML = (en ? 'Page issues' : '本页问题') + ' <b>' + issuesOf(state.section, state.slug) + '</b>';
       btn.style.display = state.slug ? '' : 'none';          // 首页没有“本页”
-    }
-
-    var all = document.getElementById('ds-all-issues');
-    if (all) {
-      all.textContent = en ? 'All issues' : '全量问题';
-      all.href = '/issues' + (en ? '?lang=en' : '');         // 英文页跳到只看英文的问题
     }
 
     var ph = document.querySelector('.ds-panel-head h3');
