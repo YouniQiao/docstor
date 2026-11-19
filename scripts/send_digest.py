@@ -235,7 +235,8 @@ def build_html(user_name: str, groups: list[dict], changes: dict, day: str,
 
 
 def collect_for(c, where_fn, enabled_filter, day: str, login: str | None = None):
-    q = "SELECT * FROM sub_users WHERE active=1 AND verified_at IS NOT NULL AND email IS NOT NULL"
+    q = ("SELECT * FROM sub_users WHERE active=1 AND verified_at IS NOT NULL"
+         " AND email IS NOT NULL AND TRIM(email) <> ''")
     args: list = []
     if login:
         q += " AND login=?"
@@ -286,7 +287,8 @@ def main() -> int:
 
     if args.to:
         # 测试发送：取第一个已确认订阅者的关注范围；没有就用「全部未解决」搭一个
-        u = c.execute("SELECT * FROM sub_users WHERE active=1 AND verified_at IS NOT NULL LIMIT 1").fetchone()
+        u = c.execute("SELECT * FROM sub_users WHERE active=1 AND verified_at IS NOT NULL"
+                      " AND TRIM(COALESCE(email,'')) <> '' LIMIT 1").fetchone()
         if u:
             targets = collect_for(c, where_fn, ef, args.date, u["login"])
         else:

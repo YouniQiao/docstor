@@ -252,6 +252,26 @@ def register(app, db_path: str, where_fn, section_names: dict, rule_label, site_
         return jsonify({"ok": True, "verified": False,
                         "msg": f"确认信已发到 {email}，点邮件里的按钮即可生效"})
 
+    @bp.post("/api/sub/email/unbind")
+    def api_unbind_email():
+        """取消邮箱绑定：清空邮箱、作废确认令牌、置为未启用；关注范围保留。"""
+        u = me()
+        if not u:
+            return jsonify({"ok": False, "error": "请先登录"}), 403
+        conn = db()
+        try:
+            row = _user_row(conn, u["login"])
+            if not row or not (row["email"] or "").strip():
+                return jsonify({"ok": False, "error": "还没有绑定邮箱"}), 400
+            old = row["email"]
+            conn.execute(
+                "UPDATE sub_users SET email='', verified_at=NULL, active=0, token=?, updated_at=?"
+                " WHERE login=?", (secrets.token_urlsafe(24), _now(), u["login"]))
+            conn.commit()
+        finally:
+            conn.close()
+        return jsonify({"ok": True, "msg": f"已取消绑定 {old}，关注范围保留但不再发送邮件"})
+
     @bp.get("/me/confirm")
     def me_confirm():
         token = request.args.get("token", "")

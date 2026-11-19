@@ -93,6 +93,7 @@
       <div class="row">
         <input type="email" id="email" placeholder="you@example.com" value="{{ email }}" style="width:300px;margin-right:4px">
         <button class="primary" id="save-email" style="margin-left:6px">{{ '重新发送确认信' if verified and active else '保存并发送确认信' }}</button>
+        {% if email %}<button class="danger" id="unbind-email" style="margin-left:6px">取消绑定</button>{% endif %}
         <span id="email-state">
           {% if not email %}<span class="pill off">未设置</span>
           {% elif not active %}<span class="pill off">已退订</span>
@@ -324,6 +325,20 @@ const EMAIL_STATE = {{ email_state|tojson }};
       const d = await r.json();
       toast(d.ok ? (e.target.checked ? '已启用' : '已停用') : '保存失败');
     });
+  });
+
+  const unb = qs('unbind-email');
+  if (unb) unb.addEventListener('click', async () => {
+    if (!confirm('取消绑定后不再发送邮件（关注范围会保留），确定取消？')) return;
+    unb.disabled = true;
+    const r = await fetch('/api/sub/email/unbind', {method:'POST'});
+    const d = await r.json(); unb.disabled = false;
+    toast(d.msg || d.error || '操作失败');
+    if (d.ok) {
+      const inp = qs('email'); if (inp) inp.value = '';
+      $('email-state').innerHTML = '<span class="pill off">未设置</span>';
+      unb.remove();
+    }
   });
 
   qs('save-email').addEventListener('click', async () => {

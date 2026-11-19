@@ -8,11 +8,11 @@
   :root{--accent:#2a6df4;--border:#e4e7ec;--muted:#687083;--bg:#f6f7f9;--line:#eef0f3}
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:#1f2430;font:14px/1.6 -apple-system,"PingFang SC","Microsoft YaHei",sans-serif}
-  header{display:flex;align-items:center;gap:12px;padding:16px 24px;background:#fff;border-bottom:1px solid var(--border);position:sticky;top:0;z-index:5}
-  header h1{font-size:17px;margin:0}
-  header a{color:var(--muted);text-decoration:none;font-size:13px}
-  header a:hover{color:var(--accent)}
-  header .sp{flex:1}
+  .pagehd{display:flex;align-items:center;gap:10px;margin:0 0 14px}
+  .pagehd h1{font-size:17px;margin:0}
+  .pagehd .sp{flex:1}
+  .pagehd button{border:none;background:none;padding:0;color:var(--muted);font-size:13px;cursor:pointer}
+  .pagehd button:hover{color:var(--accent)}
   .wrap{max-width:1000px;margin:22px auto 60px;padding:0 20px}
   .card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:16px}
   .card h2{font-size:15px;margin:0 0 4px}
@@ -35,7 +35,7 @@
   .lang label{display:inline-flex;align-items:center;gap:4px;cursor:pointer}
   .off td{color:#9aa3b2}
   .off .rule{color:#c2c8d2}
-  .login{max-width:360px;margin:80px auto;background:#fff;border:1px solid var(--border);border-radius:12px;padding:26px 24px}
+  .login{max-width:360px;margin:44px auto;background:#fff;border:1px solid var(--border);border-radius:12px;padding:26px 24px}
   .login h1{font-size:16px;margin:0 0 6px}
   .login p{color:var(--muted);font-size:12.5px;margin:0 0 16px}
   .login input{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px}
@@ -46,6 +46,7 @@
 </style>
 </head>
 <body>
+{% include "_nav.html" %}
 {% if not authed %}
 <div class="login">
   <h1>站点管理</h1>
@@ -57,17 +58,13 @@
   </form>
 </div>
 {% else %}
-<header>
-  <h1>站点管理</h1>
-  <span class="rule">检查项开关</span>
-  <span class="sp"></span>
-  <a href="/issues">全量问题 →</a>
-  <form method="post" action="/admin/logout" style="margin:0">
-    <button style="border:none;background:none;color:#687083;font-size:13px;cursor:pointer">退出</button>
-  </form>
-</header>
-
 <div class="wrap">
+  <div class="pagehd">
+    <h1>站点管理</h1>
+    <span class="rule">检查项开关</span>
+    <span class="sp"></span>
+    <form method="post" action="/admin/logout" style="margin:0"><button>退出后台</button></form>
+  </div>
   <div class="card">
     <h2>检查项</h2>
     <div class="sub">按类别分组：链接检查 / 图片检查 / 文本检查。关闭的检查项不会再被执行；已有问题保留（可在「全量问题」按类型查看）。改动即时保存。</div>
