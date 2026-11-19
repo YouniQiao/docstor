@@ -321,8 +321,9 @@ def main() -> int:
         if args.dry_run:
             print(f"  [dry-run] {u['login']} → {to} | {p}")
             continue
+        unsub_url = f"{SITE}/me/unsubscribe?token={u['token']}"
         try:
-            mailer.send_mail(to, subject, body)
+            mailer.send_mail(to, subject, body, unsubscribe_url=unsub_url)
             ok = 1
             err = ""
             sent += 1
