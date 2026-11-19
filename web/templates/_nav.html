@@ -34,11 +34,12 @@
 </style>
 <header class="tnav">
   <a class="brand" href="/">docstor</a>
-  <nav class="tabs">
+  <!-- 用 div 而不是 <nav>：docsify 会给页面里的 <nav> 自动加 .app-nav 并右对齐，导航项会被挤到右边 -->
+  <div class="tabs">
     <a href="/" class="{{ 'on' if request.path == '/' else '' }}">文档站</a>
     <a href="/issues" class="{{ 'on' if request.path == '/issues' else '' }}">全量问题</a>
     <a href="/sync" class="{{ 'on' if request.path == '/sync' else '' }}">每日文档增量记录</a>
-  </nav>
+  </div>
   <span class="sp"></span>
   <div class="usr" id="tnav-usr"></div>
 </header>
