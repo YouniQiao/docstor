@@ -12,7 +12,9 @@
 - 发件人显示名**不要带「华为」**：从非 huawei.com 域发、显示名却声称华为，容易被企业的
   反钓鱼网关判为仿冒而静默隔离（docscheck 用的是「OpenHarmony 文档检查」，同一账号能正常送达）。
 - 正文要给纯文本副本（multipart/alternative）：只有 text/html 的群发邮件更容易被判垃圾。
-- 带 List-Unsubscribe（以及 -Post）头，表明是订阅邮件而不是营销轰炸。
+- **不要加 List-Unsubscribe / List-Unsubscribe-Post 头**：2026-11 实测，加上这两个头后华为邮箱
+  静默隔离（同内容、同发件人、去掉头就能送达）；退订靠正文页脚链接。
+- 同一天不要给同一收件人连发多封近似内容的信：会被当重复内容丢掉（间隔几分钟也不行）。
 """
 from __future__ import annotations
 
@@ -83,9 +85,8 @@ def send_mail(to: str, subject: str, body_html: str, from_name: str = "",
     msg["Subject"] = Header(subject, "utf-8")
     msg["Date"] = datetime.now().strftime("%a, %d %b %Y %H:%M:%S +0800")
     msg["X-Mailer"] = "docstor-subscriber"
-    if unsubscribe_url:
-        msg["List-Unsubscribe"] = f"<{unsubscribe_url}>"
-        msg["List-Unsubscribe-Post"] = "List-Unsubscribe=One-Click"
+    # 不写 List-Unsubscribe / -Post 头：实测（2026-11）带这两个头的信进不了 huawei.com，
+    # 去掉即能送达；退订改由正文页脚的链接承担。参数保留，方便以后只对非 huawei 域启用。
 
     msg.attach(MIMEText(html_to_text(body_html), "plain", "utf-8"))
     msg.attach(MIMEText(body_html, "html", "utf-8"))
