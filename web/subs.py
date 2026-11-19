@@ -223,6 +223,12 @@ def register(app, db_path: str, where_fn, section_names: dict, rule_label, site_
             return jsonify({"ok": False, "error": "邮箱格式不正确"}), 400
         conn = db()
         try:
+            dup = conn.execute(
+                "SELECT login FROM sub_users WHERE TRIM(LOWER(email))=? AND login<>? AND active=1 LIMIT 1",
+                (email, u["login"])).fetchone()
+            if dup:
+                return jsonify({"ok": False,
+                                "error": "该邮箱已被另一个账号绑定，请先在那边「取消绑定」"}), 409
             row = _user_row(conn, u["login"])
             token = secrets.token_urlsafe(24)
             if row:
@@ -282,6 +288,12 @@ def register(app, db_path: str, where_fn, section_names: dict, rule_label, site_
             row = conn.execute("SELECT * FROM sub_users WHERE token=?", (token,)).fetchone() if token else None
             if not row:
                 return _plain("确认链接无效或已过期。请回个人中心重新发送确认信。")
+            dup = conn.execute(
+                "SELECT login FROM sub_users WHERE TRIM(LOWER(email))=? AND login<>?"
+                " AND active=1 AND verified_at IS NOT NULL LIMIT 1",
+                ((row["email"] or "").strip().lower(), row["login"])).fetchone()
+            if dup:
+                return _plain("这个邮箱已被另一个账号确认。请先在那边取消绑定，或换一个邮箱。")
             conn.execute("UPDATE sub_users SET verified_at=?, active=1, updated_at=? WHERE login=?",
                          (_now(), _now(), row["login"]))
             conn.commit()

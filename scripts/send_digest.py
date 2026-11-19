@@ -38,6 +38,7 @@ DB_PATH = BASE / CFG["db"]["path"]
 SITE = os.environ.get("DOCSTOR_SITE_URL") or "https://docstor.openharmony.cool"
 OUT_DIR = BASE / "data" / "mail_preview"
 WEEK = "一二三四五六日"
+ALERT_TO = os.environ.get("DOCSTOR_ALERT_TO") or "sunxianlei@huawei.com"
 
 SECTION_NAMES = {
     "release-notes": "版本说明", "deveco-studio": "工具", "ux-design": "设计",
@@ -254,6 +255,30 @@ def collect_for(c, where_fn, enabled_filter, day: str, login: str | None = None)
     return out
 
 
+def alert_all_failed(day: str, attempted: int, fails: list[tuple[str, str]]) -> None:
+    """整轮一封都没发出去时给运维发一封告警，每天最多一封。"""
+    flag = BASE / "data" / f".alert_{day}"
+    if flag.exists():
+        return
+    rows = "".join(
+        f'<tr><td style="padding:4px 8px;border-bottom:1px solid #f0f1f3">{_esc(to)}</td>'
+        f'<td style="padding:4px 8px;border-bottom:1px solid #f0f1f3;color:#d92d20">{_esc(err)}</td></tr>'
+        for to, err in fails[:20])
+    body = f"""<div style="font:14px/1.7 -apple-system,'PingFang SC','Microsoft YaHei',sans-serif;color:#1f2430">
+  <p><b>开发者文档质量日报 {day} 全部发送失败</b>（{attempted} 个收件人，0 成功）</p>
+  <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:13px">{rows}</table>
+  <p style="color:#687083;font-size:12.5px">9:30 会自动重试一次；若仍失败请检查 .smtp.env 与网络。</p>
+</div>"""
+    try:
+        mailer.send_mail(ALERT_TO,
+                         f"【告警】开发者文档质量日报 {day} 发送失败（{attempted} 个收件人）",
+                         body, from_name="docstor 告警")
+        flag.write_text(datetime.now().isoformat(), encoding="utf-8")
+        print(f"  已发告警邮件给 {ALERT_TO}")
+    except Exception as e:  # noqa: BLE001
+        print(f"  ! 告警邮件也发不出去：{e}")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--date", default=date.today().strftime("%Y-%m-%d"))
@@ -292,6 +317,8 @@ def main() -> int:
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     sent = 0
+    attempted = 0
+    fails: list[tuple[str, str]] = []
     for t in targets:
         u = t["user"]
         uname = u["name"] or u["login"]
@@ -316,6 +343,7 @@ def main() -> int:
         if args.dry_run:
             print(f"  [dry-run] {u['login']} → {to} | {p}")
             continue
+        attempted += 1
         unsub_url = f"{SITE}/me/unsubscribe?token={u['token']}"
         try:
             mailer.send_mail(to, subject, body, unsubscribe_url=unsub_url)
@@ -324,6 +352,7 @@ def main() -> int:
             sent += 1
         except Exception as e:  # noqa: BLE001
             ok, err = 0, str(e)[:300]
+            fails.append((to, err))
             print(f"  ✗ {u['login']} → {to}: {err}")
         c.execute("""INSERT INTO sub_sends(login,email,sent_at,groups,issues,new_today,ok,error)
                      VALUES(?,?,?,?,?,?,?,?)""",
@@ -332,6 +361,9 @@ def main() -> int:
         c.commit()
         if ok:
             print(f"  ✓ {u['login']} → {to}（{len(t['groups'])} 组）")
+    if attempted and sent == 0 and not args.dry_run:   # 全军覆没才告警，个别失败只入库
+        alert_all_failed(args.date, attempted, fails)
+
     cutoff = datetime.now().timestamp() - 30 * 86400
     for f in OUT_DIR.glob("*.html"):        # 预览件只留 30 天
         try:
