@@ -146,10 +146,9 @@ def _issue_rows(c, rows) -> str:
 
 
 def build_html(user_name: str, groups: list[dict], changes: dict, day: str,
-               token: str) -> str:
+               token: str, total_open: int, total_new: int) -> str:
+    """total_open / total_new 是各组条件的并集（去重），不是简单相加。"""
     d = datetime.strptime(day, "%Y-%m-%d")
-    total_open = sum(g["total"] for g in groups)
-    total_new = sum(g["new"] for g in groups)
     unsub = f"{SITE}/me/unsubscribe?token={token}"
     sync_link = f"{SITE}/sync?date={day}"
 
@@ -258,7 +257,17 @@ def collect_for(c, where_fn, enabled_filter, day: str, login: str | None = None)
                 "summary": s["summary"] or "", "query": s["query"], **st,
             })
             groups[-1]["rows_html"] = _issue_rows(c, st["rows"])
-        out.append({"user": u, "groups": groups})
+        conds = [(where_fn(params_of(s["query"]))[0], where_fn(params_of(s["query"]))[1])
+                 for s in subs]
+        union = " OR ".join(f"({w})" for w, _ in conds)
+        union_args = [x for _, a in conds for x in a]
+        total_union = c.execute(f"SELECT COUNT(*) n FROM issues i WHERE {union}",
+                                union_args).fetchone()["n"]
+        new_union = c.execute(
+            f"SELECT COUNT(*) n FROM issues i WHERE ({union}) AND date(i.first_seen)=?",
+            union_args + [day]).fetchone()["n"]
+        out.append({"user": u, "groups": groups,
+                    "total_union": total_union, "new_union": new_union})
     return out
 
 
@@ -299,14 +308,16 @@ def main() -> int:
     for t in targets:
         u = t["user"]
         uname = u["name"] or u["login"]
-        body = build_html(uname, t["groups"], changes, args.date, u["token"] or "x")
+        total_union = t.get("total_union") or sum(g["total"] for g in t["groups"])
+        new_union = t.get("new_union") or sum(g["new"] for g in t["groups"])
+        body = build_html(uname, t["groups"], changes, args.date, u["token"] or "x",
+                          total_union, new_union)
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         p = OUT_DIR / f"{args.date}_{u['login']}_{stamp}.html"
         p.write_text(body, encoding="utf-8")
         to = args.to or u["email"]
         subject = (f"华为文档质量日报 {args.date}｜未解决 "
-                   f"{sum(g['total'] for g in t['groups'])} 条，新增 "
-                   f"{sum(g['new'] for g in t['groups'])} 条｜文档变化 +{changes['added']}")
+                   f"{total_union} 条，新增 {new_union} 条｜文档变化 +{changes['added']}")
         if args.dry_run:
             print(f"  [dry-run] {u['login']} → {to} | {p}")
             continue
@@ -321,8 +332,7 @@ def main() -> int:
         c.execute("""INSERT INTO sub_sends(login,email,sent_at,groups,issues,new_today,ok,error)
                      VALUES(?,?,?,?,?,?,?,?)""",
                   (u["login"], to, datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                   len(t["groups"]), sum(g["total"] for g in t["groups"]),
-                   sum(g["new"] for g in t["groups"]), ok, err))
+                   len(t["groups"]), total_union, new_union, ok, err))
         c.commit()
         if ok:
             print(f"  ✓ {u['login']} → {to}（{len(t['groups'])} 组）")
