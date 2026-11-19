@@ -264,9 +264,11 @@ def main() -> int:
     changes = doc_changes(c, args.date)
 
     if args.to:
-        # 测试发送：取第一个已确认订阅者的关注范围；没有就用「全部未解决」搭一个
-        u = c.execute("SELECT * FROM sub_users WHERE active=1 AND verified_at IS NOT NULL"
-                      " AND TRIM(COALESCE(email,'')) <> '' LIMIT 1").fetchone()
+        # 测试发送：--login 指定账号就用它，否则取第一个已确认订阅者；都没有就用「全部问题」搭一个
+        q = ("SELECT * FROM sub_users WHERE active=1 AND verified_at IS NOT NULL"
+             " AND TRIM(COALESCE(email,'')) <> ''")
+        u = (c.execute(q + " AND login=? LIMIT 1", (args.login,)).fetchone() if args.login
+             else c.execute(q + " LIMIT 1").fetchone())
         if u:
             targets = collect_for(c, where_fn, ef, args.date, u["login"])
         else:
