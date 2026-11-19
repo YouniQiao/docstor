@@ -109,7 +109,7 @@
       <span style="flex:1"></span>
       <span class="meta" id="count"></span>
       <span class="meta" id="last-sync" style="font-size:12px"></span>
-      <button id="f-sub" title="把这套筛选条件加到「个人中心 → 邮件订阅」">订阅这组筛选</button>
+      <button id="f-subscribe" title="把这套筛选条件加到「个人中心 → 邮件订阅」">订阅这组筛选</button>
       <button id="f-export" title="按当前筛选导出全部问题（不分页）">导出 Excel</button>
     </div>
     <div class="frow">
@@ -375,7 +375,7 @@ function subThisFilter(){
   p.delete('page'); p.delete('size');
   location.href = '/me/subscribe?' + p.toString();
 }
-document.getElementById('f-sub').addEventListener('click', subThisFilter);
+document.getElementById('f-subscribe').addEventListener('click', subThisFilter);
 
 function syncUrl(){
   const p = new URLSearchParams(query());
