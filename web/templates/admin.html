@@ -22,6 +22,11 @@
   th{color:var(--muted);font-weight:500;font-size:12.5px}
   tr:last-child td{border-bottom:none}
   .rule{font-family:ui-monospace,Menlo,monospace;color:var(--muted);font-size:12px}
+  select.st{padding:6px 10px;font-size:13px;border:1px solid #dfe3ea;border-radius:8px;background:#fff;color:#1f2430;min-width:104px}
+  select.st:focus{outline:none;border-color:#2a6df4}
+  .tagdbg{display:inline-block;margin-left:8px;padding:0 6px;border-radius:8px;background:#eef4ff;
+          color:#2a6df4;font-size:11px;font-weight:400;vertical-align:1px}
+  tr.draft td.n{color:#687083}
   .grow td{background:#f7f9fc;font-weight:600;color:#2f3542;border-top:1px solid #e6eaf0}
   .gcount{float:right;font-weight:400;color:var(--muted);font-size:12px}
   .n{color:var(--muted);text-align:right;font-variant-numeric:tabular-nums}
@@ -67,20 +72,26 @@
   </div>
   <div class="card">
     <h2>检查项</h2>
-    <div class="sub">按类别分组：链接检查 / 图片检查 / 文本检查。关闭的检查项不会再被执行；已有问题保留（可在「全量问题」按类型查看）。改动即时保存。</div>
+    <div class="sub">三态：<b>对外</b>＝所有人可见（全量问题、导出、订阅日报）；<b>调试中</b>＝照常检查、数据入库，但只有你能看到，不参与任何对外统计；<b>停用</b>＝不再检查，已有数据保留但不再更新。改动即时保存。</div>
     <table>
-      <thead><tr><th style="width:38%">检查项</th><th style="width:90px">开关</th><th style="width:150px">生效语言</th><th class="n" style="width:90px">未解决</th></tr></thead>
+      <thead><tr><th style="width:38%">检查项</th><th style="width:130px">状态</th><th style="width:150px">生效语言</th><th class="n" style="width:90px">未解决</th></tr></thead>
       <tbody>
       {% for g in groups %}
         <tr class="grow"><td colspan="4">{{ g.name }}<span class="gcount">共 {{ '{:,}'.format(g.n) }} 条未解决</span></td></tr>
         {% for r in g.rules %}
-        <tr data-rule="{{ r.rule }}" class="{{ '' if r.enabled else 'off' }}">
+        <tr data-rule="{{ r.rule }}" data-state="{{ r.state }}" data-n="{{ r.n }}"
+            class="{{ '' if r.enabled else 'off' }}{{ ' draft' if r.state == 'debug' }}">
           <td>
-            <div>{{ r.label }}</div>
+            <div>{{ r.label }}
+              {% if r.state == 'debug' %}<span class="tagdbg">调试中 · 不对外</span>{% endif %}</div>
             <div class="rule">{{ r.rule }}</div>
           </td>
           <td>
-            <label class="sw"><input type="checkbox" class="ck" {{ 'checked' if r.enabled }}><span></span></label>
+            <select class="st">
+              <option value="live" {{ 'selected' if r.state == 'live' }}>对外</option>
+              <option value="debug" {{ 'selected' if r.state == 'debug' }}>调试中</option>
+              <option value="off" {{ 'selected' if r.state == 'off' }}>停用</option>
+            </select>
           </td>
           <td>
             <span class="lang">
@@ -88,7 +99,7 @@
               <label><input type="checkbox" class="lg" value="en" {{ 'checked' if 'en' in r.langs }}>英文</label>
             </span>
           </td>
-          <td class="n">{{ r.n }}</td>
+          <td class="n">{{ '{:,}'.format(r.n) }}</td>
         </tr>
         {% endfor %}
       {% endfor %}
@@ -106,22 +117,40 @@ function toast(msg){
   clearTimeout(toastTimer); toastTimer = setTimeout(()=>toastEl.classList.remove('on'), 1600);
 }
 
-async function saveRule(tr){
+async function saveRule(tr, prev){
   const rule = tr.dataset.rule;
-  const enabled = tr.querySelector('.ck').checked;
+  const state = tr.querySelector('.st').value;      // live | debug | off
   const langs = [...tr.querySelectorAll('.lg')].filter(x=>x.checked).map(x=>x.value);
-  tr.classList.toggle('off', !enabled);
+  if (state !== 'off' && !langs.length) {           // 至少留一种语言
+    toast('至少要选一种生效语言');
+    tr.querySelectorAll('.lg').forEach(x => x.checked = true);
+    return;
+  }
+  tr.classList.toggle('off', state === 'off');
+  tr.querySelectorAll('.lg').forEach(x => x.disabled = (state === 'off'));
   const r = await fetch('/api/rules/save', {
     method:'POST', headers:{'Content-Type':'application/json'},
-    body: JSON.stringify({rules:{ [rule]: {enabled, langs} }})
+    body: JSON.stringify({rules:{ [rule]: {state, langs} }})
   });
   const d = await r.json().catch(()=>({}));
-  toast(d.ok ? '已保存' : ('保存失败：' + (d.error || r.status)));
+  if (d.ok) { tr.dataset.state = state; toast('已保存'); }
+  else { if (prev) tr.querySelector('.st').value = prev; toast('保存失败：' + (d.error || r.status)); }
 }
 
 document.querySelectorAll('tr[data-rule]').forEach(tr=>{
-  tr.querySelector('.ck').addEventListener('change', ()=>saveRule(tr));
-  tr.querySelectorAll('.lg').forEach(c=>c.addEventListener('change', ()=>saveRule(tr)));
+  const sel = tr.querySelector('.st');
+  tr.querySelectorAll('.lg').forEach(x => x.disabled = (sel.value === 'off'));
+  sel.addEventListener('change', (e)=>{
+    const prev = tr.dataset.state;
+    if (e.target.value === 'live' && prev !== 'live') {   // 调试中 → 对外：说清后果
+      const n = Number(tr.dataset.n || 0).toLocaleString();
+      if (!confirm(`发布后该检查项当前 ${n} 条未解决问题会立即出现在全量问题、导出文件和订阅日报中。\n\n确定发布？`)) {
+        e.target.value = prev; return;
+      }
+    }
+    saveRule(tr, prev);
+  });
+  tr.querySelectorAll('.lg').forEach(c=>c.addEventListener('change', ()=>saveRule(tr, tr.dataset.state)));
 });
 </script>
 {% endif %}

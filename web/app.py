@@ -181,17 +181,15 @@ def favicon():
 
 # ---------------- API ----------------
 def _enabled_rules() -> list[str]:
-    """已开启的检查项。关闭的检查项不进全量问题：卡片、列表、侧栏、文档问题面板一律不显示。"""
+    """对外可见的检查项（enabled & visible）。
+
+    关闭的、以及「调试中」（跑但不对外）的检查项都不进全量问题：
+    卡片、列表、侧栏、文档问题面板、facets、导出、订阅预览一律不显示。
+    """
     try:
-        cfg = ds_rules.all_settings(conn())
+        return ds_rules.visible_rules(conn(), checks.REGISTRY)
     except Exception:  # noqa: BLE001
-        cfg = {}
-    out = []
-    for rule, meta in checks.REGISTRY.items():
-        c = cfg.get(rule) or {}
-        if c.get("enabled", meta.get("default_on", True)):
-            out.append(rule)
-    return out
+        return []
 
 
 def _enabled_filter(col: str = "rule") -> tuple[str, list]:
@@ -766,10 +764,13 @@ def admin_page():
     buckets: dict[str, list] = {}
     for rule, meta in checks.REGISTRY.items():
         c = cfg.get(rule) or {}
+        on = c.get("enabled", meta.get("default_on", True))
+        vis = bool(on) and c.get("visible", meta.get("default_visible", meta.get("default_on", True)))
         buckets.setdefault(rule.split(".", 1)[0], []).append({
             "rule": rule, "label": meta["label"],
             "severity": meta.get("severity", "warn"),
-            "enabled": c.get("enabled", meta.get("default_on", True)),
+            "enabled": on, "visible": vis,
+            "state": "off" if not on else ("live" if vis else "debug"),
             "langs": c.get("langs", list(meta.get("langs") or ("cn", "en"))),
             "n": counts.get(rule, 0),
             "updated_at": c.get("updated_at", "")})
@@ -794,8 +795,21 @@ def api_rules_save():
     for rule, val in (data.get("rules") or {}).items():
         if rule not in checks.REGISTRY:
             continue
-        langs = [x for x in (val.get("langs") or []) if x in ("cn", "en")]
-        payload[rule] = {"enabled": bool(val.get("enabled")), "langs": langs or ["cn", "en"]}
+        item: dict = {}
+        st = val.get("state")
+        if st in ("live", "debug", "off"):        # 三态：对外 / 调试中 / 停用
+            item["enabled"] = st != "off"
+            item["visible"] = st == "live"
+        elif "enabled" in val or "visible" in val:  # 老字段，兼容
+            if "enabled" in val:
+                item["enabled"] = bool(val["enabled"])
+            if "visible" in val:
+                item["visible"] = bool(val["visible"])
+        if val.get("langs") is not None:
+            langs = [x for x in (val.get("langs") or []) if x in ("cn", "en")]
+            item["langs"] = langs or ["cn", "en"]
+        if item:
+            payload[rule] = item
     n = ds_rules.save(conn(), payload)
     return jsonify({"ok": True, "saved": n})
 

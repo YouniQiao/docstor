@@ -55,15 +55,15 @@ def conn() -> sqlite3.Connection:
 
 
 def _enabled_filter_factory(c: sqlite3.Connection):
-    cfg = ds_rules.all_settings(c)
-    rules = [r for r, meta in checks.REGISTRY.items()
-             if (cfg.get(r) or {}).get("enabled", meta.get("default_on", True))]
+    # 只用「对外」的规则：调试中的规则不进度量，避免订阅预览和日报提前泄露
+    rules = ds_rules.visible_rules(c, checks.REGISTRY)
 
     def f(col: str):
         if not rules:
             return "1=0", []
         return f"{col} IN ({','.join('?' * len(rules))})", list(rules)
 
+    f.rules = list(rules)   # 供 collect_for 判断某个关注范围是否指向「调试中/已停用」的规则
     return f
 
 
@@ -226,10 +226,16 @@ def collect_for(c, where_fn, enabled_filter, day: str, login: str | None = None)
         q += " AND login=?"
         args.append(login)
     users = c.execute(q, args).fetchall()
+    vis = set(getattr(enabled_filter, "rules", []))
     out = []
     for u in users:
         subs = c.execute("SELECT * FROM subs WHERE login=? AND enabled=1 ORDER BY id",
                          (u["login"],)).fetchall()
+        # 「调试中 / 已停用」的检查项：指向它的关注范围本轮整块不出现，
+        # 否则会显示成「0 条 · 今日无新增」，看起来像已经修好了
+        subs = [s for s in subs
+                if not (params_of(s["query"]).get("rule")
+                        and vis and params_of(s["query"])["rule"] not in vis)]
         if not subs:
             continue
         groups = []
@@ -330,7 +336,8 @@ def main() -> int:
         p = OUT_DIR / f"{args.date}_{u['login']}_{stamp}.html"
         p.write_text(body, encoding="utf-8")
         # 幂等：同一账号同一天只发一封。定时任务被重复触发、手动重跑都不会重复轰炸收件人
-        if (not args.to and not args.force and args.date == date.today().strftime("%Y-%m-%d")):
+        if (not args.to and not args.force and not args.dry_run
+                and args.date == date.today().strftime("%Y-%m-%d")):
             done = c.execute(
                 "SELECT 1 FROM sub_sends WHERE login=? AND ok=1 AND substr(sent_at,1,10)=? LIMIT 1",
                 (u["login"], args.date)).fetchone()

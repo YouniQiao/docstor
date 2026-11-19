@@ -51,14 +51,8 @@ def _enabled_rules(con: sqlite3.Connection) -> tuple[str, list]:
     """与全量问题页同口径：只统计「已开启」的规则（关闭的规则数据仍在库里，但不上报）。"""
     try:
         import checks
-        cfg = {}
-        try:
-            for rule, enabled in con.execute("SELECT rule, enabled FROM rule_settings"):
-                cfg[rule] = bool(enabled)
-        except sqlite3.OperationalError:
-            pass
-        enabled = [r for r, meta in checks.REGISTRY.items()
-                   if cfg.get(r, meta.get("default_on", True))]
+        import ds_rules   # 统计口径与展示一致：调试中（跑但不对外）的规则不计入对外数字
+        enabled = ds_rules.visible_rules(con, checks.REGISTRY)
         if not enabled:
             return "", []
         return (" AND rule IN (" + ",".join("?" * len(enabled)) + ")", enabled)
