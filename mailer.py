@@ -30,7 +30,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent
 ENV_FILE = BASE_DIR / ".smtp.env"
-DEFAULT_FROM_NAME = "OpenHarmony 文档质量日报"
+DEFAULT_FROM_NAME = "开发者文档质量日报"
 
 
 def _load_config() -> dict:

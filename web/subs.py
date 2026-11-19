@@ -246,7 +246,7 @@ def register(app, db_path: str, where_fn, section_names: dict, rule_label, site_
         link = f"{site_url}/me/confirm?token={token}"
         html = _confirm_mail_html(u.get("name") or u["login"], link, site_url)
         try:
-            mailer.send_mail(email, "确认订阅：华为文档质量日报", html)
+            mailer.send_mail(email, "确认订阅：开发者文档质量日报", html)
         except Exception as e:  # noqa: BLE001
             return jsonify({"ok": False, "error": f"邮箱已保存，但确认信发送失败：{e}"}), 500
         return jsonify({"ok": True, "verified": False,
@@ -396,11 +396,11 @@ def _confirm_mail_html(name: str, link: str, site: str) -> str:
 <table role="presentation" width="600" cellpadding="0" cellspacing="0"
        style="background:#ffffff;border:1px solid #e4e7ec;border-radius:12px;">
   <tr><td style="padding:26px 28px 8px;font:16px/1.5 -apple-system,'PingFang SC','Microsoft YaHei',sans-serif;color:#1f2430;">
-    <b>确认订阅「华为文档质量日报」</b>
+    <b>确认订阅「开发者文档质量日报」</b>
   </td></tr>
   <tr><td style="padding:6px 28px 0;font:14px/1.8 -apple-system,'PingFang SC','Microsoft YaHei',sans-serif;color:#4a5160;">
     {name}，你好：<br>
-    你正在订阅华为文档质量日报。确认后，每天早上 <b>8:00</b> 会按你设置的关注范围，
+    你正在订阅开发者文档质量日报。确认后，每天早上 <b>8:00</b> 会按你设置的关注范围，
     把问题数量、新增明细和当天文档变更发到这个邮箱。
   </td></tr>
   <tr><td style="padding:22px 28px 4px;">

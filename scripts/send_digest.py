@@ -1,5 +1,5 @@
 #!/usr/bin/python3
-"""每天早上 8:00 发送「华为文档质量日报」订阅邮件。
+"""每天早上 8:00 发送「开发者文档质量日报」订阅邮件。
 
 数据来源与「全量问题」页完全一致（web/issueq.issue_where + 已开启检查项），
 因此邮件里的数字和页面上的数字对得上。
@@ -36,7 +36,6 @@ CFG = yaml.safe_load((BASE / "config.yaml").read_text(encoding="utf-8"))
 DB_PATH = BASE / CFG["db"]["path"]
 SITE = "https://docstor.openharmony.cool"
 OUT_DIR = BASE / "data" / "mail_preview"
-MAX_ITEMS = 30
 WEEK = "一二三四五六日"
 
 SECTION_NAMES = {
@@ -81,16 +80,11 @@ def group_stats(c, where, args, day: str) -> dict:
     na, nb = args + [day], args + [day]
     new = c.execute(
         f"SELECT COUNT(*) n FROM issues i WHERE {where} AND date(i.first_seen)=?", na).fetchone()["n"]
-    rows = c.execute(
-        f"""SELECT i.rule, i.message, i.doc_key, i.locator, i.first_seen,
-                   d.title AS doc_title, d.url AS doc_url
-            FROM issues i LEFT JOIN docs d ON d.doc_key=i.doc_key
-            WHERE {where}
-            ORDER BY CASE WHEN date(i.first_seen)=? THEN 0 ELSE 1 END,
-                     CASE i.severity WHEN 'error' THEN 0 WHEN 'warn' THEN 1 ELSE 2 END,
-                     i.last_seen DESC
-            LIMIT ?""", nb + [MAX_ITEMS]).fetchall()
-    return {"total": total, "new": new, "rows": rows}
+    rl = c.execute(
+        f"""SELECT i.rule, COUNT(*) n FROM issues i WHERE {where}
+            GROUP BY i.rule ORDER BY n DESC""", args).fetchall()
+    rules = [{"rule": r["rule"], "label": checks.rule_label(r["rule"]), "n": r["n"]} for r in rl]
+    return {"total": total, "new": new, "rules": rules}
 
 
 def doc_changes(c, day: str) -> dict:
@@ -115,34 +109,26 @@ def _esc(s) -> str:
     return html.escape(str(s or ""))
 
 
-def _short_msg(msg: str, limit: int = 96) -> str:
-    """长路径中间省略：保留开头说明和结尾锚点/文件名，比直接截尾好看。"""
-    s = (msg or "").strip()
-    if len(s) <= limit:
-        return s
-    return s[: limit - 42] + "…" + s[-30:]
-
-
-def _issue_rows(c, rows) -> str:
-    out = []
-    for r in rows:
-        label = checks.rule_label(r["rule"])
-        msg = _short_msg(r["message"] or "")
-        title = r["doc_title"] or r["doc_key"]
-        url = r["doc_url"] or ""
-        link = (f'<a href="{_esc(url)}" style="color:#2a6df4;text-decoration:none">{_esc(title)}</a>'
-                if url else _esc(title))
-        is_new = (r["first_seen"] or "")[:10]
-        tag = ('<span style="display:inline-block;padding:0 5px;border-radius:8px;background:#fff4e5;'
-               'color:#b25b00;font-size:11px;margin-left:6px">新</span>')
-        out.append(
-            '<tr>'
-            f'<td style="padding:7px 8px;border-bottom:1px solid #f0f1f3;color:#687083;font-size:12px;white-space:nowrap">{_esc(label)}</td>'
-            f'<td style="padding:7px 8px;border-bottom:1px solid #f0f1f3;font-size:13px;color:#1f2430">'
-            f'{_esc(msg)}</td>'
-            f'<td style="padding:7px 8px;border-bottom:1px solid #f0f1f3;font-size:12.5px">{link}</td>'
-            '</tr>')
-    return "".join(out)
+def _cards_html(items: list[dict]) -> str:
+    """问题小卡片：每行 3 个，数字在上、类型在下，点击跳到站点对应筛选。"""
+    cells = []
+    for it in items:
+        cells.append(
+            f'<td width="33%" style="padding:0 6px 10px 0">'
+            f'<a href="{_esc(it["href"])}" style="display:block;text-decoration:none;'
+            f'background:#f7f9fc;border:1px solid #eef0f3;border-radius:10px;padding:11px 12px">'
+            f'<div style="font-size:19px;font-weight:700;color:#1f2430;line-height:1.2">'
+            f'{it["n"]:,}</div>'
+            f'<div style="color:#687083;font-size:12px;margin-top:3px">{_esc(it["label"])}</div>'
+            f'</a></td>')
+    rows = []
+    for i in range(0, len(cells), 3):
+        chunk = cells[i:i + 3]
+        while len(chunk) < 3:
+            chunk.append('<td width="33%"></td>')
+        rows.append("<tr>" + "".join(chunk) + "</tr>")
+    return ('<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+            'style="border-collapse:separate;border-spacing:0">' + "".join(rows) + "</table>")
 
 
 def build_html(user_name: str, groups: list[dict], changes: dict, day: str,
@@ -160,7 +146,7 @@ def build_html(user_name: str, groups: list[dict], changes: dict, day: str,
        style="background:#ffffff;border:1px solid #e4e7ec;border-radius:12px;
               font:14px/1.7 -apple-system,'PingFang SC','Microsoft YaHei',sans-serif;color:#1f2430;">
   <tr><td style="padding:22px 24px 6px">
-    <div style="font-size:17px;font-weight:700">华为文档质量日报 · {d.month} 月 {d.day} 日（周{WEEK[d.weekday()]}）</div>
+    <div style="font-size:17px;font-weight:700">开发者文档质量日报 · {d.month} 月 {d.day} 日（周{WEEK[d.weekday()]}）</div>
     <div style="color:#687083;font-size:12.5px;margin-top:4px">
       {_esc(user_name)}，你关注了 {len(groups)} 个范围 ·
       未解决 <b style="color:#1f2430">{total_open:,}</b> 条 · 今日新增
@@ -186,34 +172,27 @@ def build_html(user_name: str, groups: list[dict], changes: dict, day: str,
     for g in groups:
         label = _esc(g["label"])
         cond = _esc(g["summary"])
-        all_link = f"{SITE}/issues?{g['query']}"
-        if g["rows"]:
-            rows_html = (
-                '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
-                'style="margin-top:8px;border-collapse:collapse">'
-                '<tr>'
-                '<th align="left" width="14%" style="padding:0 8px 6px;background:#f7f9fc;color:#687083;font-size:12px;font-weight:600">类型</th>'
-                '<th align="left" width="56%" style="padding:0 8px 6px;background:#f7f9fc;color:#687083;font-size:12px;font-weight:600">问题</th>'
-                '<th align="left" width="30%" style="padding:0 8px 6px;background:#f7f9fc;color:#687083;font-size:12px;font-weight:600">文档</th>'
-                '</tr>' + g["rows_html"] + '</table>')
-            if g["total"] > len(g["rows"]):
-                rows_html += (f'<div style="color:#9aa3b2;font-size:12px;margin-top:6px">'
-                              f'仅列出前 {len(g["rows"])} 条，其余在站点查看。</div>')
-        else:
-            rows_html = ('<div style="color:#1a7f37;font-size:13px;margin-top:8px">'
-                         '今日无新增问题 👍</div>')
+        q = g["query"] or "status=open"
+        all_link = f"{SITE}/issues?{q}"
+        rules = g.get("rules") or []
+        cards = [{"n": r["n"], "label": r["label"],
+                  "href": f"{SITE}/issues?{q}&rule={r['rule']}"} for r in rules]
+        if len(cards) > 1:          # 只有一种类型时，总数卡片和类型卡片重复，就不要了
+            cards.insert(0, {"n": g["total"], "label": "未解决问题总数", "href": all_link})
+        new_line = (f'今日新增 <b style="color:#d92d20">{g["new"]:,}</b> 条'
+                    if g["new"] else "今日无新增问题 👍")
         block = f"""
   <tr><td style="padding:18px 24px 0">
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
       <tr><td style="border-top:1px solid #eef0f3;padding-top:14px">
-        <div style="font-size:14.5px;font-weight:700">{label}</div>
-        <div style="color:#687083;font-size:12.5px;margin-top:2px">{cond}</div>
-        <div style="margin-top:8px;font-size:13px">
-          本范围未解决 <b>{g['total']:,}</b> 条 · 今日新增
-          <b style="color:{'#d92d20' if g['new'] else '#1f2430'}">{g['new']:,}</b> 条
-          <a href="{all_link}" style="color:#2a6df4;text-decoration:none;font-size:12.5px;margin-left:14px">查看全部 →</a>
-        </div>
-        {rows_html}
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
+          <td style="font-size:14.5px;font-weight:700">{label}</td>
+          <td align="right"><a href="{all_link}"
+             style="color:#2a6df4;text-decoration:none;font-size:12.5px">在站点查看 →</a></td>
+        </tr></table>
+        {'' if cond == label else f'<div style="color:#687083;font-size:12.5px;margin-top:2px">{cond}</div>'}
+        <div style="margin-top:10px">{_cards_html(cards)}</div>
+        <div style="font-size:12.5px;color:#687083;margin-top:2px">{new_line}</div>
       </td></tr>
     </table>
   </td></tr>"""
@@ -222,7 +201,7 @@ def build_html(user_name: str, groups: list[dict], changes: dict, day: str,
     foot = f"""
   <tr><td style="padding:20px 24px 24px">
     <div style="border-top:1px solid #eef0f3;padding-top:14px;color:#9aa3b2;font-size:12px;line-height:1.9">
-      这封邮件每天早上 8:00 发送 · 数据来自华为开发者文档中心镜像检查<br>
+      这封邮件每天早上 8:00 发送 · 数据来自开发者文档中心镜像检查<br>
       <a href="{SITE}/me/subscribe" style="color:#9aa3b2">调整关注范围</a> ·
       <a href="{unsub}" style="color:#9aa3b2">不再接收（一键退订）</a> ·
       <a href="{SITE}/issues" style="color:#9aa3b2">打开全量问题</a>
@@ -257,7 +236,6 @@ def collect_for(c, where_fn, enabled_filter, day: str, login: str | None = None)
                 "id": s["id"], "label": s["label"] or "未命名",
                 "summary": s["summary"] or "", "query": s["query"], **st,
             })
-            groups[-1]["rows_html"] = _issue_rows(c, st["rows"])
         conds = [(where_fn(params_of(s["query"]))[0], where_fn(params_of(s["query"]))[1])
                  for s in subs]
         union = " OR ".join(f"({w})" for w, _ in conds)
@@ -295,9 +273,8 @@ def main() -> int:
             w, a = where_fn({"status": "open"})
             st = group_stats(c, w, a, args.date)
             targets = [{"user": {"login": "test", "name": "测试", "token": "x"},
-                        "groups": [{"id": 0, "label": "全部未解决", "summary": "全部状态下的未解决问题",
-                                    "query": "status=open", **st,
-                                    "rows_html": _issue_rows(c, st["rows"])}]}]
+                        "groups": [{"id": 0, "label": "全部问题", "summary": "",
+                                    "query": "status=open", **st}]}]
     else:
         targets = collect_for(c, where_fn, ef, args.date, args.login or None)
 
@@ -318,7 +295,7 @@ def main() -> int:
         p = OUT_DIR / f"{args.date}_{u['login']}_{stamp}.html"
         p.write_text(body, encoding="utf-8")
         to = args.to or u["email"]
-        subject = (f"华为文档质量日报 {args.date}｜未解决 "
+        subject = (f"开发者文档质量日报 {args.date}｜未解决 "
                    f"{total_union} 条，新增 {new_union} 条｜文档变化 +{changes['added']}")
         if args.dry_run:
             print(f"  [dry-run] {u['login']} → {to} | {p}")
