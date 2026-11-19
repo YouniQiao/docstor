@@ -50,10 +50,12 @@ def is_configured() -> bool:
 def html_to_text(body_html: str) -> str:
     """粗略地把 HTML 转成纯文本（够用：去掉样式/标签、链接留文字、压掉空行）。"""
     s = re.sub(r"(?is)<(script|style).*?</\1>", "", body_html)
+    s = re.sub(r">\s+<", "><", s)          # 先吃掉标签之间的缩进换行，纯文本才不会被拆成碎行
     s = re.sub(r"(?is)<br\s*/?>", "\n", s)
     s = re.sub(r"(?is)</(tr|div|p|h\d|table)>", "\n", s)
     s = re.sub(r"(?is)</t[dh]>", " | ", s)
-    s = re.sub(r"(?is)<a [^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>", r"\2 <\1>", s)
+    # 链接写成「文字 (地址)」：用 <> 包地址会被下一步的「去标签」一起吃掉
+    s = re.sub(r"(?is)<a [^>]*href=\"([^\"]+)\"[^>]*>(.*?)</a>", r"\2 (\1)", s)
     s = re.sub(r"(?s)<[^>]+>", "", s)
     s = (s.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<")
           .replace("&gt;", ">").replace("&quot;", '"').replace("&#39;", "'"))
