@@ -117,7 +117,7 @@
             <td class="n">{{ '{:,}'.format(g.total) }}</td>
             <td class="n">{{ '{:,}'.format(g.new) }}</td>
             <td><label class="sw"><input type="checkbox" class="tg" {{ 'checked' if g.enabled }}><span></span></label></td>
-            <td><button class="danger del">删除</button></td>
+            <td><button class="danger del" style="white-space:nowrap">删除关注</button></td>
           </tr>
         {% endfor %}
         </tbody>
@@ -314,7 +314,7 @@ const EMAIL_STATE = {{ email_state|tojson }};
   document.querySelectorAll('tr[data-id]').forEach(tr => {
     const id = tr.dataset.id;
     tr.querySelector('.del').addEventListener('click', async () => {
-      if (!confirm('删除这个关注范围？')) return;
+      if (!confirm('删除这个关注？')) return;
       const r = await fetch(`/api/subs/${id}/delete`, {method:'POST'});
       const d = await r.json();
       if (d.ok){ tr.remove(); toast('已删除'); } else toast('删除失败');
