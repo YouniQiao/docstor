@@ -38,6 +38,8 @@
   .sw input:checked+span:before{transform:translateX(18px)}
   .lang{display:inline-flex;gap:10px;color:var(--muted);font-size:12.5px}
   .lang label{display:inline-flex;align-items:center;gap:4px;cursor:pointer}
+  a.view{color:var(--accent);text-decoration:none;font-size:12.5px}
+  a.view:hover{text-decoration:underline}
   .off td{color:#9aa3b2}
   .off .rule{color:#c2c8d2}
   .login{max-width:360px;margin:44px auto;background:#fff;border:1px solid var(--border);border-radius:12px;padding:26px 24px}
@@ -74,10 +76,10 @@
     <h2>检查项</h2>
     <div class="sub">三态：<b>对外</b>＝所有人可见（全量问题、导出、订阅日报）；<b>调试中</b>＝照常检查、数据入库，但只有你能看到，不参与任何对外统计；<b>停用</b>＝不再检查，已有数据保留但不再更新。改动即时保存。</div>
     <table>
-      <thead><tr><th style="width:38%">检查项</th><th style="width:130px">状态</th><th style="width:150px">生效语言</th><th class="n" style="width:90px">未解决</th></tr></thead>
+      <thead><tr><th style="width:38%">检查项</th><th style="width:130px">状态</th><th style="width:150px">生效语言</th><th class="n" style="width:90px">未解决</th><th style="width:56px"></th></tr></thead>
       <tbody>
       {% for g in groups %}
-        <tr class="grow"><td colspan="4">{{ g.name }}<span class="gcount">共 {{ '{:,}'.format(g.n) }} 条未解决</span></td></tr>
+        <tr class="grow"><td colspan="5">{{ g.name }}<span class="gcount">共 {{ '{:,}'.format(g.n) }} 条未解决</span></td></tr>
         {% for r in g.rules %}
         <tr data-rule="{{ r.rule }}" data-state="{{ r.state }}" data-n="{{ r.n }}"
             class="{{ '' if r.enabled else 'off' }}{{ ' draft' if r.state == 'debug' }}">
@@ -100,6 +102,7 @@
             </span>
           </td>
           <td class="n">{{ '{:,}'.format(r.n) }}</td>
+          <td><a class="view" href="/admin/rule/{{ r.rule }}">查看</a></td>
         </tr>
         {% endfor %}
       {% endfor %}
