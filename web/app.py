@@ -952,8 +952,10 @@ def admin_page():
             err = f"口令错误次数过多，请 {left} 分钟后再试"
         return render_template("admin.html", authed=False, err=err, rules=[])
     cfg = ds_rules.all_settings(conn())
-    counts = {r["rule"]: r["n"] for r in conn().execute(
-        "SELECT rule, COUNT(*) n FROM issues WHERE status='open' GROUP BY rule")}
+    # 未解决数必须按「规则的生效语言」统计：AGC 这条只管中文，库里还留着当年跑英文时的
+    # 478 条（langs 改成 cn 后它们在所有对外口径里都不算），这里不能再算成 744。
+    _by_lang = {(r["rule"], r["lang"]): r["n"] for r in conn().execute(
+        "SELECT rule, lang, COUNT(*) n FROM issues WHERE status='open' GROUP BY rule, lang")}
     # 检查项按规则前缀归类：link.* → 链接检查、image.* → 图片检查、text.* → 文本检查，
     # 以后加的新检查项只要用对应前缀，就会自动落到该分类里，不用改这里
     buckets: dict[str, list] = {}
@@ -961,13 +963,14 @@ def admin_page():
         c = cfg.get(rule) or {}
         on = c.get("enabled", meta.get("default_on", True))
         vis = bool(on) and c.get("visible", meta.get("default_visible", meta.get("default_on", True)))
+        _langs = [x for x in (c.get("langs") or meta.get("langs") or ["cn", "en"]) if x]
         buckets.setdefault(rule.split(".", 1)[0], []).append({
             "rule": rule, "label": meta["label"],
             "severity": meta.get("severity", "warn"),
             "enabled": on, "visible": vis,
             "state": "off" if not on else ("live" if vis else "debug"),
-            "langs": c.get("langs", list(meta.get("langs") or ("cn", "en"))),
-            "n": counts.get(rule, 0),
+            "langs": _langs,
+            "n": sum(_by_lang.get((rule, lg), 0) for lg in _langs),
             "updated_at": c.get("updated_at", "")})
     groups = [{"name": RULE_GROUP_NAMES[key], "rules": buckets[key],
                "n": sum(r["n"] for r in buckets[key])}
