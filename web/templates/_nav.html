@@ -1,4 +1,4 @@
-{# 统一顶栏：文档站 / 全量问题 / 每日文档增量记录 + 右侧用户区
+{# 统一顶栏：文档站 / 全量问题 / 每日变更记录 + 右侧用户区
    三个页面共用，当前页由 request.path 高亮，用户态走 /api/me。 #}
 <style>
   header.tnav{display:flex;align-items:center;gap:20px;padding:0 24px;background:#fff;
@@ -38,7 +38,7 @@
   <div class="tabs">
     <a href="/" class="{{ 'on' if request.path == '/' else '' }}">文档站</a>
     <a href="/issues" class="{{ 'on' if request.path == '/issues' else '' }}">全量问题</a>
-    <a href="/sync" class="{{ 'on' if request.path == '/sync' else '' }}">每日文档增量记录</a>
+    <a href="/sync" class="{{ 'on' if request.path == '/sync' else '' }}">每日变更记录</a>
   </div>
   <span class="sp"></span>
   <div class="usr" id="tnav-usr"></div>

@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>每日文档增量记录 · 鸿蒙开发者文档</title>
+<title>每日变更记录 · 鸿蒙开发者文档</title>
 <style>
   :root{--accent:#2f6fed;--accent-weak:#eaf1ff;--border:#e6e8eb;--muted:#6b7280;--danger:#d94a4a;--warn:#b3761f;--info:#57606a;--add:#1a7f37;--del:#b03030}
   *{box-sizing:border-box}
@@ -74,10 +74,6 @@
 </head>
 <body>
 {% include "_nav.html" %}
-<div class="wrap" style="padding-top:10px;padding-bottom:0">
-  <div class="muted" id="updated" style="text-align:right;font-size:12px"></div>
-</div>
-
 <div class="wrap">
   <div class="cards">
     <div class="card"><div class="n" id="k-docs">—</div><div class="l">官网文档总数</div></div>
@@ -150,7 +146,6 @@ async function loadDays(){
   document.getElementById('k-today-mod').textContent = NF(isToday ? today.modified : 0);
   document.getElementById('k-today-del').textContent = NF(isToday ? today.deleted : 0);
   document.getElementById('k-last').textContent = d.last_run ? d.last_run.slice(5, 16) : '—';
-  document.getElementById('updated').textContent = '更新于 ' + new Date().toLocaleString('zh-CN');
 
   const days = d.days || [];
   const wrap = document.getElementById('days-wrap');
