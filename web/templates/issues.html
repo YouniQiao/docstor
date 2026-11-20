@@ -103,9 +103,9 @@
   {% if preview %}
   <div class="pvbar">
     <span class="pvtag {{ preview.state }}">
-      {{ '调试中 · 不对外' if preview.state == 'debug' else ('对外' if preview.state == 'live' else '停用') }}</span>
-    <b>调试预览 · {{ preview.label }}</b>
-    <span class="meta">这条检查项的问题不会出现在对外页面、导出和订阅日报中</span>
+      {{ '调试中 · 不对外' if preview.state == 'debug' else ('启用' if preview.state == 'live' else '停用') }}</span>
+    <b>检查项预览 · {{ preview.label }}</b>
+    <span class="meta">{% if preview.state == 'live' %}已启用：问题会出现在全量问题、导出文件和订阅日报中{% elif preview.state == 'debug' %}调试中：只在这里可见，不进对外页面、导出和订阅日报{% else %}停用：不再检查，已有数据保留{% endif %}</span>
     <span style="flex:1"></span>
     {% if preview.run %}<span class="meta">上次手动运行 {{ preview.run.started_at }}{% if preview.run.running %} · 运行中…{% endif %}</span>{% endif %}
     <button id="pv-run" {{ 'disabled title="检查项已停用，先到「检查项开关」启用"' if preview.state == 'off' }}>只跑这条规则</button>
