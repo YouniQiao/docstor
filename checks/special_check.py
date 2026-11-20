@@ -18,7 +18,7 @@ from .base import Issue, register
 
 # 边界：标识符/文件名/路径里的字符。`agconnect-services.json`、`com.huawei.agconnect`、
 # `agc-help-xxx`、`AGC3.0` 这类是产品标识，不算正文中的名称写法。
-IDENT = r"[A-Za-z0-9_.\-/]"
+IDENT = r"[A-Za-z0-9_.\-/@]"
 
 # 顺序有讲究：先长后短，AGC 用词边界避免和 AGConnect / 更长的英文词撞车
 TERMS = [
@@ -36,6 +36,7 @@ AUDIO_HINT = re.compile(
     r"(?<![A-Za-z])AEC(?![A-Za-z])|(?<![A-Za-z])ANC(?![A-Za-z])|回声消除|噪声抑制|降噪", re.I)
 HTML_COMMENT = re.compile(r"<!--.*?-->")
 URL = re.compile(r"(?:https?|ftp)://[^\s)>\]]+")
+EMAIL = re.compile(r"[\w.+%-]+@[\w.-]+\.[A-Za-z]{2,}")   # agconnect@huawei.com 这类联系邮箱
 LINK_DEST = re.compile(r"\]\([^)\s]*\)")     # 去掉链接地址，保留链接文字
 HTML_TAG = re.compile(r"<[^>]+>")
 
@@ -56,6 +57,7 @@ def check_agc_name(doc, ctx):
         t = INLINE_CODE.sub(" ", line)
         t = HTML_COMMENT.sub(" ", t)
         t = URL.sub(" ", t)
+        t = EMAIL.sub(" ", t)
         t = LINK_DEST.sub("] ", t)
         t = HTML_TAG.sub(" ", t)
         audio = AUDIO_HINT.search(t) if "agc" in t.lower() else None
