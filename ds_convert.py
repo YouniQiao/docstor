@@ -22,6 +22,8 @@ import tempfile
 from pathlib import Path
 
 import requests
+
+import ds_fetch
 from markitdown import MarkItDown, StreamInfo
 
 IMG_RE = re.compile(r'<img[^>]+src=["\']([^"\']+)["\']', re.IGNORECASE)
@@ -146,16 +148,18 @@ def convert(html: str, images_dir: Path, session: requests.Session,
             continue
 
         try:
-            r = session.get(full, timeout=40)
-            if r.status_code != 200 or not r.content:
+            # 图片也走「总时长」兜底：CDN 卡住时单次读超时可能永远不触发，
+            # 6 个线程一起挂住就整段板抓取停摆（2026-11-20 的实际故障）
+            st, content, headers = ds_fetch.get(session, full, total=45)
+            if st != 200 or not content:
                 failed += 1
                 continue
-            ext = _ext(r.headers.get("Content-Type", ""), full)
+            ext = _ext(headers.get("Content-Type", ""), full)
             p = images_dir / f"{stem}.{ext}"
-            p.write_bytes(r.content)
-            total_bytes += len(r.content)
+            p.write_bytes(content)
+            total_bytes += len(content)
 
-            if ext == "gif" and gif_to_video and len(r.content) >= gif_min_bytes:
+            if ext == "gif" and gif_to_video and len(content) >= gif_min_bytes:
                 mp4 = images_dir / f"{stem}.mp4"
                 if gif_to_mp4(p, mp4, crf, preset):
                     try:
@@ -164,7 +168,7 @@ def convert(html: str, images_dir: Path, session: requests.Session,
                         pass
                     local_map[src] = VIDEO_TAG.format(src=f"images/{mp4.name}")
                     videos += 1
-                    total_bytes = total_bytes - len(r.content) + mp4.stat().st_size
+                    total_bytes = total_bytes - len(content) + mp4.stat().st_size
                     continue
             local_map[src] = f"images/{p.name}"
             images += 1

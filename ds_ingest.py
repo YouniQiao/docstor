@@ -226,7 +226,15 @@ def ingest(args) -> int:
     log(f"   待抓取 {len(todo)} 篇（并发 {cfg['ingest']['workers']}，"
         f"内容未变的会跳过写盘）")
 
-    session = build_session(cfg)
+    _tls = threading.local()
+
+    def worker_session() -> requests.Session:
+        """一个线程一份 session：requests.Session 跨线程共用会互踩连接池。"""
+        s = getattr(_tls, "s", None)
+        if s is None:
+            s = build_session(cfg)
+            _tls.s = s
+        return s
     delay = cfg["ingest"]["request_delay"]
     stats = {"ok": 0, "fail": 0, "skip": 0, "images": 0, "videos": 0, "bytes": 0,
              "added": 0, "modified": 0, "deleted": 0}
@@ -255,7 +263,7 @@ def ingest(args) -> int:
         if not html.strip():
             return {"ok": False, "slug": slug, "err": "正文为空"}
         conv = ds_convert.convert(
-            html, img_dir, session,
+            html, img_dir, worker_session(),
             gif_to_video=cfg["media"]["gif_to_video"],
             crf=cfg["media"]["video_crf"],
             preset=cfg["media"]["video_preset"],
@@ -318,6 +326,12 @@ def ingest(args) -> int:
                         db.add_sync_items(run_id, changes)
                         changes.clear()
                 anchors_map[r["slug"]] = r["anchors"]
+                # 先算官网地址（可能触发目录探测＝网络请求），再写库，别让写事务跨着网络
+                _t = time.time()
+                url = ds_catalog.url_for(lang, section, r["slug"], int(bool(r["is_api"])))
+                _cost = time.time() - _t
+                if _cost > 3:
+                    log(f"   ⏳ {r['slug']} 解析官网目录用了 {_cost:.0f}s")
                 db.upsert_doc({
                     "doc_key": doc_key, "lang": lang, "section": section,
                     "slug": r["slug"], "title": r["title"], "doc_id": r["doc_id"],
@@ -329,7 +343,7 @@ def ingest(args) -> int:
                     "fetched_at": ds_db.now(), "status": "ok",
                 })
                 db.set_updated(doc_key, r.get("updated"))
-                db.set_url(doc_key, ds_catalog.url_for(lang, section, r["slug"], int(bool(r["is_api"]))))
+                db.set_url(doc_key, url)
                 if r["failed_imgs"]:
                     log(f"   ⚠ {r['slug']}: {r['failed_imgs']} 张图下载失败")
             else:
@@ -382,6 +396,14 @@ def ingest(args) -> int:
                                 encoding="utf-8")
     stats["elapsed_s"] = round(time.time() - t0, 1)
     stats["failures"] = failures[:50]
+    try:
+        # WAL 攒到跟整库一样大时，后续每个写都要在巨大的 WAL 上滚动，整轮会越跑越慢；
+        # 抓完顺手收一次（有读者占着时会失败，忽略即可，下次还有机会）。
+        busy, pages, ckpt = db.conn.execute("PRAGMA wal_checkpoint(TRUNCATE)").fetchone()
+        if busy:
+            log(f"   ℹ WAL checkpoint 被读者挡住（{ckpt}/{pages} 页已回收），跳过")
+    except Exception as e:  # noqa: BLE001
+        log(f"   ℹ WAL checkpoint 跳过：{e}")
     db.finish_run(run_id, stats)
     rec = db.export_meta(lang, section, doc_dir)   # 供前端「更新时间」使用
     db.close()

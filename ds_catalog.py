@@ -141,8 +141,13 @@ def _all_catalogs() -> list[str]:
     return list(dict.fromkeys(names))
 
 
-def resolve(lang: str, section: str, slug: str, is_api: int = 0) -> str:
-    """这篇属于哪个目录：目录树索引 → 板块对应目录 → 前缀提示 → 全目录实测。"""
+def resolve(lang: str, section: str, slug: str, is_api: int = 0, budget: float = 20.0) -> str:
+    """这篇属于哪个目录：目录树索引 → 板块对应目录 → 前缀提示 → 全目录实测。
+
+    budget：单篇最多花多少秒在「挨个目录试」上。目录猜不出来时这里会连着发十几个
+    请求，没有上限时一篇文档就能把整轮抓取拖死（2026-11-20 en/getting-started）。
+    """
+    deadline = time.time() + budget
     cat = _from_index(lang, slug)
     if cat:
         put(lang, slug, cat)
@@ -157,6 +162,8 @@ def resolve(lang: str, section: str, slug: str, is_api: int = 0) -> str:
     cats += _all_catalogs()
     api = _api()
     for cat in dict.fromkeys(cats):
+        if time.time() > deadline:
+            break
         try:
             d = api._post("getDocumentById",
                           {"objectId": slug, "catalogName": cat, "language": lang})

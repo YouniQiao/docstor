@@ -25,7 +25,11 @@ import json
 import time
 from dataclasses import dataclass, field
 
+import threading
+
 import requests
+
+import ds_fetch
 
 API_BASE = "https://svc-drcn.developer.huawei.com/community/servlet/consumer/cn/documentPortal/"
 
@@ -96,16 +100,29 @@ class DocCenter:
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": ua, "Referer": referer,
                                      "Content-Type": "application/json"})
+        self._local = threading.local()
+
+    def _sess(self) -> requests.Session:
+        """requests.Session 不是线程安全的：抓取时 6 个线程共用一个会互踩连接池。
+
+        每个线程一份 session（复用 keep-alive），既避开竞态也不会串 cookie。
+        """
+        s = getattr(self._local, "s", None)
+        if s is None:
+            s = requests.Session()
+            s.headers.update(dict(self.session.headers))
+            self._local.s = s
+        return s
 
     # ---------- 底层 ----------
     def _post(self, method: str, payload: dict) -> dict:
         last = None
         for attempt in range(self.retries):
             try:
-                r = self.session.post(self.base + method, json=payload,
-                                      timeout=self.timeout)
-                r.raise_for_status()
-                return r.json()
+                # 总时长兜底：服务器一点点吐字节时，requests 的单次读超时永远不触发
+                return ds_fetch.post_json(self._sess(), self.base + method, payload,
+                                          total=self.timeout * 2,
+                                          read=min(self.timeout, 30))
             except Exception as e:  # noqa: BLE001
                 last = e
                 time.sleep(0.8 * (attempt + 1))

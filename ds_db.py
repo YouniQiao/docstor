@@ -131,6 +131,7 @@ class DB:
         self.conn.row_factory = sqlite3.Row
         self.conn.executescript(SCHEMA)
         self.conn.execute("PRAGMA journal_mode=WAL")
+        self.conn.execute("PRAGMA journal_size_limit=67108864")   # WAL 文件最多 64MB
         # 老库补列（CREATE TABLE IF NOT EXISTS 不会改已存在的表）
         for tbl, col, typ in [("nodes", "alias", "TEXT"),
                               ("docs", "updated_at", "TEXT"),
@@ -173,10 +174,15 @@ class DB:
             return
         self.conn.execute("UPDATE docs SET updated_at=? WHERE doc_key=?",
                           (to_cst(str(raw)), doc_key))
+        # 必须立刻提交：后面紧接着要算官网地址（可能要发网络请求），
+        # 事务悬着就会在整个网络请求期间占着 SQLite 写锁，
+        # 抓取线程和页面那边全被 "database is locked" 卡住（2026-11-20 故障根因）。
+        self.conn.commit()
 
     def set_url(self, doc_key: str, url: str) -> None:
         if url:
             self.conn.execute("UPDATE docs SET url=? WHERE doc_key=?", (url, doc_key))
+            self.conn.commit()
 
     def export_meta(self, lang: str, section: str, out_dir) -> int:
         """导出该板块 {slug: {t: 更新时间, u: 官网原文地址}} 供前端显示。"""
