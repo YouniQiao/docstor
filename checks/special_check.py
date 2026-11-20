@@ -15,11 +15,15 @@ import re
 
 from .base import Issue, register
 
+# 边界：标识符/文件名/路径里的字符。`agconnect-services.json`、`com.huawei.agconnect`、
+# `agc-help-xxx`、`AGC3.0` 这类是产品标识，不算正文中的名称写法。
+IDENT = r"[A-Za-z0-9_.\-/]"
+
 # 顺序有讲究：先长后短，AGC 用词边界避免和 AGConnect / 更长的英文词撞车
 TERMS = [
-    ("AppGallery Connect", re.compile(r"app\s*gallery\s*connect", re.I)),
-    ("AGConnect", re.compile(r"ag\s*connect", re.I)),
-    ("AGC", re.compile(r"(?<![A-Za-z0-9])agc(?![A-Za-z0-9])", re.I)),
+    ("AppGallery Connect", re.compile(rf"(?<!{IDENT})app\s*gallery\s*connect(?!{IDENT})", re.I)),
+    ("AGConnect", re.compile(rf"(?<!{IDENT})ag\s*connect(?!{IDENT})", re.I)),
+    ("AGC", re.compile(rf"(?<!{IDENT})agc(?!{IDENT})", re.I)),
 ]
 
 INLINE_CODE = re.compile(r"`[^`\n]*`")
