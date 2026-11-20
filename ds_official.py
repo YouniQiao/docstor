@@ -16,7 +16,8 @@ verdict:
   cn_only   英文站没有、中文站有 → 英文缺译
   dead      官网查不到 → 死链
 
-结论缓存在 `link_official` 表（30 天）；离网时回退到 catalog_index / sitemap。
+结论缓存在 `link_official` 表：`ok` 留 30 天，「报问题的结论」（dead/cn_only/moved/renamed）
+只留 3 天——官网修好后最多 3 天就能自动从问题列表里消失；离网时回退到 catalog_index / sitemap。
 ds_check 用线程池，数据库连接和 requests 会话按线程各持一份。
 """
 from __future__ import annotations
@@ -31,7 +32,8 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent
 DB = BASE / "data/docstor.db"
 SITEMAP_CN = BASE / "data/sitemap_doc_cn.xml"
-TTL = 30 * 24 * 3600
+TTL = 30 * 24 * 3600          # 官网「有这篇」：没问题的不用勤查，全量 3.2 万条靠它省请求
+TTL_SUSPECT = 3 * 24 * 3600   # 「dead / cn_only / moved」：正在报问题，官网随时可能修好，3 天重判一次
 
 # 板块 → 官网可能的 catalogName（新版 doccenter-* 与老版目录名）
 SECTION_CATS = {
@@ -208,8 +210,11 @@ class Official:
                              " WHERE lang=? AND section=? AND slug=?",
                              (lang, section, slug)).fetchone()
             if row:
+                # 保质期跟着结论走：报问题的结论（dead/cn_only/moved）只留 3 天，
+                # 官网修好后最多 3 天就能自动消失；「有这篇」留 30 天，省掉 3.2 万次请求。
+                ttl = TTL if row[0] == "ok" else TTL_SUSPECT
                 try:
-                    if time.time() - time.mktime(time.strptime(row[1], "%Y-%m-%d %H:%M:%S")) < TTL:
+                    if time.time() - time.mktime(time.strptime(row[1], "%Y-%m-%d %H:%M:%S")) < ttl:
                         return row[0]
                 except Exception:  # noqa: BLE001
                     pass
