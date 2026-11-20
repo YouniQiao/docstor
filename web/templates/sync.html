@@ -33,6 +33,9 @@
   .mod{color:var(--warn);font-weight:600}
   .del{color:var(--del);font-weight:600}
   .zero{color:#b9bec7}
+  .dur div{line-height:1.55}
+  .dur .ck{color:var(--muted);font-size:12px}
+  .dur .bad{color:var(--warn);font-size:12px;cursor:help}
   .filters{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:4px 0 10px}
   select,input[type=text]{border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:13px;background:#fff;color:#1f2430}
   input[type=text]{min-width:220px}
@@ -140,14 +143,14 @@ async function loadDays(){
   }
   wrap.innerHTML = `<table><thead><tr>
       <th>日期</th><th class="num">新增</th><th class="num">修改</th><th class="num">删除</th>
-      <th class="num">耗时</th><th>明细</th>
+      <th class="num">耗时 / 状态</th><th>明细</th>
     </tr></thead><tbody>` + days.map(x => `
       <tr class="dayrow ${x.d === state.day ? 'sel' : ''}" data-day="${x.d}">
         <td>${x.d}</td>
         <td class="num ${x.added ? 'add' : 'zero'}">${NF(x.added)}</td>
         <td class="num ${x.modified ? 'mod' : 'zero'}">${NF(x.modified)}</td>
         <td class="num ${x.deleted ? 'del' : 'zero'}">${NF(x.deleted)}</td>
-        <td class="num">${x.secs ? Math.round(x.secs / 60) + ' 分钟' : '—'}</td>
+        <td class="num dur">${durCell(x)}</td>
         <td><a class="link" href="#" data-day="${x.d}">查看</a></td>
       </tr>`).join('') + '</tbody></table>';
 
@@ -155,6 +158,27 @@ async function loadDays(){
     if (ev.target.tagName === 'A') ev.preventDefault();
     selectDay(el.dataset.day);
   }));
+}
+
+// 耗时拆成「抓取 / 检查」两行；被超时杀掉的 run 没有 elapsed，单独标成失败，
+// 否则像 2026-11-20 那样整轮跑了 3 小时、页面却只显示 31 分钟。
+function durCell(x){
+  const ig = Math.round((x.ingest_secs || 0) / 60);
+  const ck = Math.round((x.check_secs || 0) / 60);
+  const out = [];
+  out.push(`<div>${ig ? ig + ' 分钟抓取' : '—'}</div>`);
+  if (ck) out.push(`<div class="ck">${ck} 分钟检查</div>`);
+  const fails = x.fails || [];
+  if (fails.length){
+    const names = fails.map(f => `${f.target}${f.kind === 'check' ? '（检查）' : ''}`);
+    const running = fails.some(f => {
+      const t = new Date((f.started_at || '').replace(' ', 'T')).getTime();
+      return t && Date.now() - t < 100 * 60 * 1000;
+    });
+    out.push(`<div class="bad" title="${esc(names.join('、'))}">`
+      + `${running ? '运行中…' : fails.length + ' 项未跑完'}</div>`);
+  }
+  return out.join('');
 }
 
 function selectDay(day){

@@ -365,8 +365,21 @@ def api_sync_days():
                   SUM(COALESCE(json_extract(stats,'$.added'),0)) added,
                   SUM(COALESCE(json_extract(stats,'$.modified'),0)) modified,
                   SUM(COALESCE(json_extract(stats,'$.deleted'),0)) deleted,
-                  SUM(COALESCE(json_extract(stats,'$.elapsed_s'),0)) secs
-           FROM runs WHERE kind='ingest' GROUP BY d ORDER BY d DESC LIMIT 120""").fetchall()
+                  SUM(CASE WHEN kind='ingest' THEN COALESCE(json_extract(stats,'$.elapsed_s'),0)
+                           ELSE 0 END) ingest_secs,
+                  SUM(CASE WHEN kind='check' THEN COALESCE(json_extract(stats,'$.elapsed_s'),0)
+                           ELSE 0 END) check_secs,
+                  SUM(CASE WHEN kind='ingest' THEN 1 ELSE 0 END) ingest_runs
+           FROM runs WHERE kind IN ('ingest','check') GROUP BY d ORDER BY d DESC LIMIT 120""").fetchall()
+
+    # 没有 finished_at 的 run = 进程被超时杀掉/中断，这一项当天其实没跑完，页面要标出来
+    fails = {}
+    for r in c.execute(
+            """SELECT date(started_at) d, kind, target, started_at FROM runs
+               WHERE finished_at IS NULL AND kind IN ('ingest','check')
+               ORDER BY id"""):
+        fails.setdefault(r["d"], []).append(
+            {"kind": r["kind"], "target": r["target"], "started_at": r["started_at"]})
     docs_total = c.execute("SELECT COUNT(*) n FROM docs WHERE status='ok'").fetchone()["n"]
     last = c.execute("SELECT started_at FROM runs WHERE kind='ingest' "
                      "ORDER BY id DESC LIMIT 1").fetchone()
@@ -376,7 +389,7 @@ def api_sync_days():
         "today": datetime.now().strftime("%Y-%m-%d"),
         "docs_total": docs_total,
         "last_run": last["started_at"] if last else None,
-        "days": [dict(r) for r in rows],
+        "days": [{**dict(r), "fails": fails.get(r["d"], [])} for r in rows],
         "sections": [{"key": s, "name": SECTION_NAMES.get(s, s)} for s in secs],
     })
 
