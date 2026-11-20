@@ -408,7 +408,7 @@ def api_sync_items():
     c = conn()
     total = c.execute("SELECT COUNT(*) n " + base, args).fetchone()["n"]
     rows = c.execute("SELECT i.doc_key, i.kind, i.lang, i.section, i.slug, i.title, i.version, "
-                     "i.old_version, r.started_at, d.is_api " + base +
+                     "i.old_version, r.started_at, d.is_api, d.url AS doc_url " + base +
                      " ORDER BY CASE i.kind WHEN 'deleted' THEN 1 ELSE 0 END, i.id DESC"
                      " LIMIT ? OFFSET ?", args + [size, (page - 1) * size]).fetchall()
     items = []
@@ -418,6 +418,7 @@ def api_sync_items():
             try:
                 official = ds_catalog.url_for(r["lang"], r["section"], r["slug"],
                                               int(r["is_api"] or 0))
+                official = official or (r["doc_url"] or "")   # 兜底用抓取时的真实地址
             except Exception:  # noqa: BLE001
                 official = ""
         items.append({
