@@ -49,6 +49,7 @@ CREATE TABLE IF NOT EXISTS subs(
   query      TEXT NOT NULL,
   summary    TEXT,
   enabled    INTEGER DEFAULT 1,
+  sort_order INTEGER,
   created_at TEXT
 );
 CREATE TABLE IF NOT EXISTS sub_sends(
@@ -67,6 +68,11 @@ CREATE TABLE IF NOT EXISTS sub_sends(
 
 def ensure_schema(conn: sqlite3.Connection) -> None:
     conn.executescript(SCHEMA)
+    # 老库补 sort_order（用户可拖动调整关注范围的顺序，邮件也按这个顺序）
+    cols = {r[1] for r in conn.execute("PRAGMA table_info(subs)")}
+    if "sort_order" not in cols:
+        conn.execute("ALTER TABLE subs ADD COLUMN sort_order INTEGER")
+    conn.execute("UPDATE subs SET sort_order = id WHERE sort_order IS NULL")
     conn.commit()
 
 
@@ -139,7 +145,9 @@ def register(app, db_path: str, where_fn, section_names: dict, rule_label, site_
         return conn.execute("SELECT * FROM sub_users WHERE login=?", (login,)).fetchone()
 
     def _subs_of(conn, login: str):
-        return conn.execute("SELECT * FROM subs WHERE login=? ORDER BY id", (login,)).fetchall()
+        return conn.execute(
+            "SELECT * FROM subs WHERE login=? ORDER BY COALESCE(sort_order, id), id",
+            (login,)).fetchall()
 
     def _count(params: dict) -> int:
         w, args = where_fn(params)
@@ -353,11 +361,39 @@ def register(app, db_path: str, where_fn, section_names: dict, rule_label, site_
             dup = conn.execute("SELECT id FROM subs WHERE login=? AND query=?", (u["login"], query)).fetchone()
             if dup:
                 return jsonify({"ok": False, "error": "这个关注范围已经存在"}), 400
-            conn.execute("INSERT INTO subs(login,label,query,summary,enabled,created_at) VALUES(?,?,?,?,1,?)",
+            nxt = conn.execute("SELECT COALESCE(MAX(sort_order), 0) + 1 FROM subs WHERE login=?",
+                               (u["login"],)).fetchone()[0]
+            conn.execute("INSERT INTO subs(login,label,query,summary,enabled,sort_order,created_at)"
+                         " VALUES(?,?,?,?,1,?,?)",
                          (u["login"], label, query,
-                          describe(params, section_names, rule_label), _now()))
+                          describe(params, section_names, rule_label), nxt, _now()))
             conn.commit()
             return jsonify({"ok": True, "total": total})
+        finally:
+            conn.close()
+
+    @bp.post("/api/subs/reorder")
+    def api_reorder():
+        """保存「我关注的问题」的上下顺序（邮件里也按这个顺序列）。"""
+        u = me()
+        if not u:
+            return jsonify({"ok": False, "error": "未登录"}), 401
+        data = request.get_json(silent=True) or {}
+        try:
+            ids = [int(x) for x in (data.get("ids") or [])]
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "参数不对"}), 400
+        conn = db()
+        try:
+            mine = {r["id"] for r in
+                    conn.execute("SELECT id FROM subs WHERE login=?", (u["login"],))}
+            if set(ids) != mine:
+                return jsonify({"ok": False, "error": "列表已经变了，刷新一下再拖"}), 400
+            for i, sid in enumerate(ids):
+                conn.execute("UPDATE subs SET sort_order=? WHERE id=? AND login=?",
+                             (i + 1, sid, u["login"]))
+            conn.commit()
+            return jsonify({"ok": True})
         finally:
             conn.close()
 

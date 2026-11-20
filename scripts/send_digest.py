@@ -229,7 +229,8 @@ def collect_for(c, where_fn, enabled_filter, day: str, login: str | None = None)
     vis = set(getattr(enabled_filter, "rules", []))
     out = []
     for u in users:
-        subs = c.execute("SELECT * FROM subs WHERE login=? AND enabled=1 ORDER BY id",
+        subs = c.execute("SELECT * FROM subs WHERE login=? AND enabled=1"
+                         " ORDER BY COALESCE(sort_order, id), id",
                          (u["login"],)).fetchall()
         # 「调试中 / 已停用」的检查项：指向它的关注范围本轮整块不出现，
         # 否则会显示成「0 条 · 今日无新增」，看起来像已经修好了

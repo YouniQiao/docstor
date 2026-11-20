@@ -20,6 +20,12 @@
   .card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:16px}
   .card h2{font-size:15px;margin:0 0 4px}
   .card .sub{color:var(--muted);font-size:12.5px;margin-bottom:14px}
+  table.subs td.dragcol{width:30px;padding-right:0}
+  .drag{display:inline-block;cursor:grab;color:#c2c7d0;font-size:15px;line-height:1;
+        padding:2px 4px;border-radius:5px;user-select:none;touch-action:none}
+  .drag:hover{color:#6b7280;background:#f1f3f6}
+  tr.dragging{opacity:.55}
+  tr.dragging td{background:#eef4ff !important}
   table{width:100%;border-collapse:collapse;font-size:13.5px}
   th,td{padding:10px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:middle}
   th{color:var(--muted);font-weight:500;font-size:12.5px}
@@ -120,11 +126,12 @@
       <div class="sub" style="color:#b25b00">还没有关注范围，不会收到日报；在下方新建一个即可。</div>
       {% endif %}
       {% if groups %}
-      <table>
-        <thead><tr><th style="width:28%">名称</th><th>条件</th><th class="n" style="width:86px">未解决</th><th class="n" style="width:86px">今日新增</th><th style="width:60px">启用</th><th style="width:76px">操作</th></tr></thead>
+      <table class="subs">
+        <thead><tr><th style="width:30px"></th><th style="width:28%">名称</th><th>条件</th><th class="n" style="width:86px">未解决</th><th class="n" style="width:86px">今日新增</th><th style="width:60px">启用</th><th style="width:76px">操作</th></tr></thead>
         <tbody>
         {% for g in groups %}
           <tr data-id="{{ g.id }}">
+            <td class="dragcol"><span class="drag" title="按住拖动，调整上下顺序（邮件里也按这个顺序）">⠿</span></td>
             <td>{{ g.label }}</td>
             <td><span class="hint">{{ g.summary if g.summary != g.label else '—' }}</span></td>
             <td class="n">{{ '{:,}'.format(g.total) }}</td>
@@ -346,6 +353,45 @@ const EMAIL_STATE = {{ email_state|tojson }};
       toast(d.ok ? (e.target.checked ? '已启用' : '已停用') : '保存失败');
     });
   });
+
+  // 拖动调整「我关注的问题」的上下顺序：pointer 事件，鼠标和手机上都能拖
+  const tbody = document.querySelector('table.subs tbody');
+  if (tbody){
+    let row = null;
+    const saveOrder = async () => {
+      const ids = [...tbody.querySelectorAll('tr[data-id]')].map(t => +t.dataset.id);
+      const r = await fetch('/api/subs/reorder', {method:'POST',
+        headers:{'Content-Type':'application/json'}, body: JSON.stringify({ids})});
+      const d = await r.json();
+      toast(d.ok ? '顺序已保存' : (d.error || '顺序保存失败'));
+    };
+    tbody.addEventListener('pointerdown', e => {
+      const h = e.target.closest('.drag');
+      if (!h) return;
+      row = h.closest('tr');
+      row.classList.add('dragging');
+      h.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    tbody.addEventListener('pointermove', e => {
+      if (!row) return;
+      const others = [...tbody.querySelectorAll('tr[data-id]')].filter(t => t !== row);
+      let before = null;
+      for (const t of others){
+        const r = t.getBoundingClientRect();
+        if (e.clientY < r.top + r.height / 2){ before = t; break; }
+      }
+      if (before) tbody.insertBefore(row, before); else tbody.appendChild(row);
+    });
+    const drop = () => {
+      if (!row) return;
+      row.classList.remove('dragging');
+      row = null;
+      saveOrder();
+    };
+    tbody.addEventListener('pointerup', drop);
+    tbody.addEventListener('pointercancel', drop);
+  }
 
   const unb = qs('unbind-email');
   if (unb) unb.addEventListener('click', async () => {
