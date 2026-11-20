@@ -183,7 +183,8 @@ function durCell(x){
     return t && Date.now() - t < 20 * 60 * 1000;   // 正常板块最长十几分钟
   });
   const bad = fails.length
-    ? `<span class="bad" title="${esc(names.join('、'))}">${running ? '运行中…' : fails.length + ' 项未跑完'}</span>`
+    ? `<span class="bad" title="${running ? '' : '以下任务超时或中断（数据未写入）：'}${esc(names.join('、'))}">`
+      + `${running ? '运行中…' : fails.length + ' 项中断'}</span>`
     : '';
   const out = [`<div>${ig ? ig + ' 分钟抓取' : '—'}</div>`];
   const sub = [ck ? `${ck} 分钟检查` : '', bad].filter(Boolean).join(' · ');

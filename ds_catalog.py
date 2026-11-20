@@ -162,8 +162,10 @@ def resolve(lang: str, section: str, slug: str, is_api: int = 0, budget: float =
     cats += list(ds_official.ALL_CATS)
     cats += _all_catalogs()
     api = _api()
+    timed_out = False
     for cat in dict.fromkeys(cats):
         if time.time() > deadline:
+            timed_out = True
             break
         try:
             d = api._post("getDocumentById",
@@ -173,6 +175,10 @@ def resolve(lang: str, section: str, slug: str, is_api: int = 0, budget: float =
         if d.get("code") == 0:
             put(lang, slug, cat)
             return cat
+    if timed_out:
+        # 预算用完了但没试遍：绝不能写空缓存——那等于把这篇永久标成「官网已下架」，
+        # 要等 90 天 TTL 才会重探。直接返回空串让调用方兜底，下次再试。
+        return ""
     put(lang, slug, "")
     return ""
 
@@ -273,8 +279,12 @@ def refresh(force: bool = False, log=print) -> dict:
     return out
 
 
-def url_for(lang: str, section: str, slug: str, is_api: int = 0) -> str:
-    """官网原文地址：用实测目录，查不到再退回按板块推算。"""
+def url_for(lang: str, section: str, slug: str, is_api: int = 0, budget: float = 20.0) -> str:
+    """官网原文地址：用实测目录，查不到再退回按板块推算。
+
+    budget：猜目录时最多花多少秒发网络请求。抓取侧可以给 20 秒；web 请求（列表/导出）
+    必须给小值（1~2 秒），否则一篇缓存里没有的文档就能让整个页面卡十几秒。
+    """
     cat = get(lang, slug)
     # 空串是「当时所有目录都探测失败」的缓存，可能已经过期：
     # 目录树索引更新后，索引里的实测目录比空缓存可信，先问索引。
@@ -284,7 +294,7 @@ def url_for(lang: str, section: str, slug: str, is_api: int = 0) -> str:
             put(lang, slug, fresh)
             cat = fresh
     if cat is None:
-        cat = resolve(lang, section, slug, is_api)
+        cat = resolve(lang, section, slug, is_api, budget=budget)
     if cat == "":
         return ""            # 实测官网已无此篇（还有空目录缓存），别硬拼一个必然 404 的地址
     if not cat:

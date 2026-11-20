@@ -86,7 +86,9 @@ def login_name() -> str:
 def _fail(msg: str, code: int = 400):
     if request.path.startswith("/api/"):
         return jsonify({"ok": False, "error": msg}), code
-    return f"<p style='font:14px/1.7 system-ui;padding:40px'>{msg}</p>", code
+    # msg 里可能带 GitCode 回传的 error_description（攻击者可控），必须转义后再拼 HTML
+    from markupsafe import escape
+    return (f"<p style='font:14px/1.7 system-ui;padding:40px'>{escape(msg)}</p>", code)
 
 
 def register_auth(app) -> None:

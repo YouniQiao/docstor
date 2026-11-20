@@ -7,6 +7,7 @@ import json
 import os
 import re
 import subprocess
+import time
 from datetime import datetime
 import sys
 from pathlib import Path
@@ -53,6 +54,53 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_proto=1, x_host=1)
 app.config["TEMPLATES_AUTO_RELOAD"] = True
 app.secret_key = _ENV.get("SECRET_KEY") or os.urandom(32)
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+# ── 安全基线（对外开放前加固）────────────────────────────────────
+_FAILS: dict[str, list[float]] = {}          # 后台口令失败记录：IP → 时间戳
+_FAIL_MAX, _FAIL_WINDOW, _FAIL_LOCK = 8, 600, 900   # 10 分钟内错 8 次 → 锁 15 分钟
+
+
+def _client_ip() -> str:
+    return (request.headers.get("X-Real-IP") or request.remote_addr or "").strip()
+
+
+@app.before_request
+def _harden_cookie():
+    """全站走 https 时才给会话 cookie 加 Secure；本地 http 调试仍可用。"""
+    app.config["SESSION_COOKIE_SECURE"] = bool(request.is_secure)
+
+
+@app.after_request
+def _secure_headers(resp):
+    resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+    resp.headers.setdefault("X-Frame-Options", "SAMEORIGIN")
+    resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    resp.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+    if request.is_secure:
+        resp.headers.setdefault("Strict-Transport-Security", "max-age=31536000")
+    return resp
+
+
+@app.errorhandler(404)
+def _not_found(e):
+    if request.path.startswith("/api/"):
+        return jsonify({"ok": False, "error": "接口不存在"}), 404
+    return e
+
+
+@app.errorhandler(Exception)
+def _unhandled(e):  # noqa: ANN001
+    """兜底：接口一律回 JSON，页面回一句人话；别把 500 的堆栈暴露给访客。"""
+    from werkzeug.exceptions import HTTPException
+    if isinstance(e, HTTPException):
+        return e
+    app.logger.exception("未处理异常 %s", request.path)
+    if request.path.startswith("/api/"):
+        return jsonify({"ok": False, "error": "服务器内部错误，请稍后重试"}), 500
+    return ("<div style='font:15px/1.8 system-ui;padding:60px;text-align:center'>"
+            "<h2 style='margin:0 0 8px'>服务器内部错误</h2>"
+            "<p style='color:#777'>请稍后重试；如果一直这样，把访问的地址告诉管理员。</p>"
+            "<p><a href='/issues'>← 回到全量问题</a></p></div>", 500)
 
 gcauth.init_app(app)
 
@@ -282,10 +330,19 @@ def _issue_where(a=None) -> tuple[str, list]:
     return issueq.issue_where(a if a is not None else request.args, _enabled_filter)
 
 
+def _int_arg(name: str, default: int, lo: int, hi: int) -> int:
+    """URL 参数转整数：非法值回落默认（直接 int() 会 500，用户分享带脏参数的链接就炸）。"""
+    try:
+        v = int(str(request.args.get(name, default)).strip())
+    except (TypeError, ValueError):
+        return default
+    return min(hi, max(lo, v))
+
+
 @app.get("/api/issues")
 def api_issues():
-    page = max(1, int(request.args.get("page", 1)))
-    size = min(200, max(5, int(request.args.get("size", 50))))
+    page = _int_arg("page", 1, 1, 100000)
+    size = _int_arg("size", 50, 5, 200)
     w, args = _issue_where()
     total = conn().execute(f"SELECT COUNT(*) n FROM issues i WHERE {w}", args).fetchone()["n"]
     rows = conn().execute(
@@ -299,6 +356,7 @@ def api_issues():
                      i.id DESC
             LIMIT ? OFFSET ?""", args + [size, (page - 1) * size]).fetchall()
     items = []
+    _dl = time.time() + 3.0       # 一整页最多花 3 秒拼官网地址，剩下的行直接用 docs.url 兜底
     for r in rows:
         loc = {}
         try:
@@ -308,8 +366,11 @@ def api_issues():
         doc_key = r["doc_key"] or ""
         parts = doc_key.split("/")
         # 官网原文地址：按实测目录拼（板块 ≠ 目录时按板块拼会 404，如 games 文档在 games-guides 下）
-        official = (ds_catalog.url_for(r["lang"], r["section"], parts[-1] or "", int(r["is_api"] or 0))
-                    if len(parts) == 3 else "")
+        _b = min(1.5, max(0.0, _dl - time.time()))
+        official = ""
+        if _b > 0 and len(parts) == 3:
+            official = ds_catalog.url_for(r["lang"], r["section"], parts[-1] or "",
+                                          int(r["is_api"] or 0), budget=_b)
         official = official or (r["doc_url"] or "")   # 兜底：docs.url 里存的是抓取时用的真实官网地址
         href, link_text = _link_meta(doc_key, loc)
         items.append({**{k: r[k] for k in r.keys()},
@@ -413,8 +474,8 @@ def api_sync_items():
     lang = request.args.get("lang", "")
     section = request.args.get("section", "")
     q = request.args.get("q", "").strip()
-    page = max(1, int(request.args.get("page", 1)))
-    size = min(200, max(10, int(request.args.get("size", 50))))
+    page = _int_arg("page", 1, 1, 100000)
+    size = _int_arg("size", 50, 10, 200)
 
     where, args = ["1=1"], []
     if re.fullmatch(r"\d{4}-\d{2}-\d{2}", date_s or ""):
@@ -441,7 +502,7 @@ def api_sync_items():
         if r["slug"]:
             try:
                 official = ds_catalog.url_for(r["lang"], r["section"], r["slug"],
-                                              int(r["is_api"] or 0))
+                                              int(r["is_api"] or 0), budget=1.5)
                 official = official or (r["doc_url"] or "")   # 兜底用抓取时的真实地址
             except Exception:  # noqa: BLE001
                 official = ""
@@ -470,25 +531,66 @@ def api_sync_status():
     return jsonify(d)
 
 
+_EXPORT_CACHE: dict[str, tuple[float, bytes]] = {}
+_EXPORT_LOCK = __import__("threading").Lock()
+_EXPORT_TTL = 180
+
+
 @app.get("/api/export.xlsx")
 def api_export():
-    """按当前筛选条件导出全部问题（不分页），筛选维度一并作为列。"""
+    """按当前筛选条件导出全部问题（不分页），筛选维度一并作为列。
+
+    同一个筛选 3 分钟内复用已生成的文件，且同一时刻只允许一个线程在生成
+    （1,400 行 × 20 列要 3 秒；十几个人同时点会把单进程 CPU 占满）。
+    """
     import io
+    import time as _t
     from datetime import datetime
 
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
 
+    _key = "&".join(f"{k}={v}" for k, v in sorted(request.args.items())) or "(all)"
+    _hit = _EXPORT_CACHE.get(_key)
+    if _hit and _t.time() - _hit[0] < _EXPORT_TTL:
+        return _send_xlsx(_hit[1])
+    with _EXPORT_LOCK:                      # 单飞：并发时只有第一个真生成，其余排队后拿缓存
+        _hit = _EXPORT_CACHE.get(_key)
+        if _hit and _t.time() - _hit[0] < _EXPORT_TTL:
+            return _send_xlsx(_hit[1])
+        return _build_export(_key)
+
+
+def _send_xlsx(data: bytes):
+    import io
+    from datetime import datetime
+    return send_file(io.BytesIO(data), as_attachment=True,
+                     download_name=f"全量问题_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+def _build_export(_key: str):
+    import io
+    import time as _t
+    from datetime import datetime
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Font, PatternFill
+    from openpyxl.utils import get_column_letter
+
     w, args = _issue_where()
+    # 注意：不要把 doc_cat 用 c.lang||'/'||c.section||'/'||c.slug = i.doc_key 这种表达式 JOIN 进来——
+    # 没有可用索引，SQLite 会按外层每行整表扫 doc_cat（34k 行 ×1,442 条 ≈ 32 秒）。
+    # 这里一次性把 (lang/section/slug)→sub/domain/kit 读进内存，逐行字典查，全量 1,442 行 <1s。
+    cat_map = {(r["lang"], r["section"], r["slug"]): (r["sub"], r["domain"], r["kit"])
+               for r in conn().execute("SELECT lang, section, slug, sub, domain, kit FROM doc_cat")}
     rows = conn().execute(
         f"""SELECT i.doc_key, i.lang, i.section, i.rule, i.severity, i.locator, i.message,
                    i.first_seen, i.last_seen, i.status, i.resolved_at,
                    i.ignored_by, i.ignored_at,
-                   d.is_api, d.url AS doc_url, c.sub, c.domain, c.kit
+                   d.is_api, d.url AS doc_url
             FROM issues i
             LEFT JOIN docs d ON d.doc_key = i.doc_key
-            LEFT JOIN doc_cat c ON c.lang||'/'||c.section||'/'||c.slug = i.doc_key
             WHERE {w}
             ORDER BY i.first_seen DESC,
                      CASE i.severity WHEN 'error' THEN 0 WHEN 'warn' THEN 1 ELSE 2 END,
@@ -510,6 +612,8 @@ def api_export():
     base = request.url_root.rstrip("/")
     link_font = Font(color="1155CC", underline="single")
 
+    _dl = time.time() + 5.0                      # 导出整批最多 5 秒拼地址，超出退回 docs.url
+    row_i = 1                                     # 表头占第 1 行；自己数，不要用 ws.max_row（O(n²)）
     for r in rows:
         doc_key = r["doc_key"] or ""
         parts = doc_key.split("/")
@@ -519,19 +623,24 @@ def api_export():
             loc = json.loads(r["locator"] or "{}")
         except Exception:  # noqa: BLE001
             pass
-        official = (ds_catalog.url_for(r["lang"], r["section"], slug, int(r["is_api"] or 0))
-                    if len(parts) == 3 else "")
+        _b = min(1.0, max(0.0, _dl - time.time()))
+        official = ""
+        if _b > 0 and len(parts) == 3:
+            official = ds_catalog.url_for(r["lang"], r["section"], slug,
+                                          int(r["is_api"] or 0), budget=_b)
         official = official or (r["doc_url"] or "")   # 兜底：docs.url 是抓取时用的真实官网地址
         href, link_text = _link_meta(doc_key, loc)
         anchor = loc.get("anchorId") or ""
         mirror = f"{base}/#/{doc_key}" + (f"?id={anchor}" if anchor else "")
-        sub = r["domain"] or r["sub"] or ""
+        _sub, _dom, _kit = cat_map.get((r["lang"], r["section"], parts[-1] if parts else ""),
+                                       (None, None, None))
+        sub = _dom or _sub or ""
         ws.append([
             checks.rule_label(r["rule"]),
             "中文" if r["lang"] == "cn" else "英文",
             SECTION_NAMES.get(r["section"], r["section"]),
             sub,
-            r["kit"] or "",
+            _kit or "",
             "API参考" if r["is_api"] else ("指南" if r["is_api"] is not None else ""),
             r["message"] or "",
             link_text or "",
@@ -547,7 +656,7 @@ def api_export():
             {"error": "错误", "warn": "警告", "info": "提示"}.get(r["severity"], r["severity"]),
             doc_key,
         ])
-        row_i = ws.max_row
+        row_i += 1
         for col_i, val in ((9, href), (10, mirror), (11, official)):
             if val:
                 c = ws.cell(row=row_i, column=col_i)
@@ -556,14 +665,14 @@ def api_export():
         for col_i in (7, 8, 9):
             ws.cell(row=row_i, column=col_i).alignment = Alignment(vertical="top", wrap_text=False)
 
-    ws.auto_filter.ref = f"A1:{get_column_letter(len(EXPORT_COLS))}{ws.max_row}"
+    ws.auto_filter.ref = f"A1:{get_column_letter(len(EXPORT_COLS))}{row_i}"
     buf = io.BytesIO()
     wb.save(buf)
-    buf.seek(0)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M")
-    name = f"全量问题_{stamp}.xlsx"
-    return send_file(buf, as_attachment=True, download_name=name,
-                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+    data = buf.getvalue()
+    if len(_EXPORT_CACHE) > 8:
+        _EXPORT_CACHE.clear()
+    _EXPORT_CACHE[_key] = (_t.time(), data)
+    return _send_xlsx(data)
 
 def _section_opts(rows):
     """板块下拉用文档侧边栏的板块名（版本说明/工具…），一个板块一项、中英文合并计数。
@@ -657,9 +766,21 @@ def _kit_opts():
             for r in sorted(rows, key=lambda r: (r["section"], r["sd"], r["s"]))]
 
 
+_FACETS_CACHE: dict[str, tuple[float, dict]] = {}
+
+
 @app.get("/api/facets")
 def api_facets():
+    """筛选器数据（规则/语言/板块/细分/领域/Kit 计数）。
+
+    这是个重查询（几个 GROUP BY 拼 doc_cat 3.4 万行），一次 0.5 秒；十几个人同时刷页面
+    会把这个单进程 CPU 占满。同一套检查项口径下缓存 60 秒，规则开关一变 key 就变。
+    """
     fw, fa = _enabled_filter()
+    _k = ",".join(fa)
+    _hit = _FACETS_CACHE.get(_k)
+    if _hit and time.time() - _hit[0] < 60:
+        return jsonify(_hit[1])
     by_rule = [r for r in conn().execute(
         f"""SELECT rule, COUNT(*) n_all, SUM(status='open') n FROM issues
             WHERE {fw} GROUP BY rule ORDER BY n DESC""", fa)
@@ -678,7 +799,7 @@ def api_facets():
         return (c.get("enabled", meta.get("default_on", True)),
                 c.get("langs", list(meta.get("langs") or ("cn", "en"))))
 
-    return jsonify({
+    payload = {
         "rules": [dict({"rule": r["rule"], "label": checks.rule_label(r["rule"]),
                         "n": r["n"], "n_all": r["n_all"]},
                        enabled=_rule_state(r["rule"])[0],
@@ -688,7 +809,10 @@ def api_facets():
         "subs": _sub_opts(),
         "domains": _domain_opts(),
         "kits": _kit_opts(),
-    })
+    }
+    _FACETS_CACHE.clear()                       # 只留当前口径这一份
+    _FACETS_CACHE[_k] = (time.time(), payload)
+    return jsonify(payload)
 
 
 SECTION_ORDER = ["release-notes", "deveco-studio", "ux-design", "capabilities", "getting-started",
@@ -733,9 +857,15 @@ def api_tree():
     stamp = conn().execute("SELECT COALESCE(MAX(id),0) m FROM nodes").fetchone()["m"]
     fw, fa = _enabled_filter()          # 徽标口径：只算已开启的规则
     sig = ",".join(fa)
+    def _tree_resp(payload):
+        resp = jsonify(payload)
+        # 3.4MB 的树（gzip 后约 770KB）没必要每次翻页都重下
+        resp.headers["Cache-Control"] = "private, max-age=120"
+        return resp
+
     cached = _TREE_CACHE.get(lang)
     if cached and cached[0] == stamp and cached[1] == sig:
-        return jsonify(cached[2])
+        return _tree_resp(cached[2])
 
     # 官网的行为：目录树里 hided=1 的节点平时不展开，但当前页所在的这条链路要显示出来
     # （例如「Automatic Scene Configuration Kit（场景配置服务）」整枝都是 hided=1，
@@ -782,8 +912,7 @@ def api_tree():
 
     payload = {"lang": lang, "sections": sections, "issues": issues}
     _TREE_CACHE[lang] = (stamp, ",".join(fa), payload)
-    return jsonify(payload)
-    return jsonify(payload)
+    return _tree_resp(payload)
 
 
 # ---------------- 全量问题页 ----------------
@@ -797,12 +926,30 @@ RULE_GROUP_ORDER = ["link", "special", "image", "text"]
 def admin_page():
     err = ""
     if request.method == "POST":
+        import time as _t
+        ip = _client_ip()
+        now = _t.time()
+        fails = [t for t in _FAILS.get(ip, []) if now - t < _FAIL_LOCK]
+        _FAILS[ip] = fails
+        if len(fails) >= _FAIL_MAX and now - fails[-1] < _FAIL_LOCK:
+            left = int((_FAIL_LOCK - (now - fails[-1])) / 60) + 1
+            return render_template("admin.html", authed=False, rules=[], cache=None,
+                                   err=f"口令错误次数过多，请 {left} 分钟后再试"), 429
         pwd = request.form.get("password", "")
         if _ENV.get("ADMIN_PASSWORD") and hmac.compare_digest(pwd, _ENV["ADMIN_PASSWORD"]):
+            _FAILS.pop(ip, None)
             session["admin"] = True
             return redirect(url_for("admin_page"))
+        fails.append(now)
+        _FAILS[ip] = fails[-20:]
+        _t.sleep(0.3)                      # 拖慢字典攻击；只影响后台登录这一条路径
         err = "口令不正确"
     if not is_admin():
+        import time as _t
+        fails = [t for t in _FAILS.get(_client_ip(), []) if _t.time() - t < _FAIL_LOCK]
+        if not err and len(fails) >= _FAIL_MAX:
+            left = int((_FAIL_LOCK - (_t.time() - fails[-1])) / 60) + 1
+            err = f"口令错误次数过多，请 {left} 分钟后再试"
         return render_template("admin.html", authed=False, err=err, rules=[])
     cfg = ds_rules.all_settings(conn())
     counts = {r["rule"]: r["n"] for r in conn().execute(
