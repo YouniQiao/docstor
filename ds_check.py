@@ -21,7 +21,6 @@ import threading
 import time
 from pathlib import Path
 
-import requests
 import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -42,31 +41,7 @@ def log(msg: str) -> None:
 
 
 class Ctx(DocContext):
-    """在基础上下文上加外链探测（带 7 天缓存）。"""
-
-    _session = None
-
-    def check_url(self, url: str) -> int:
-        cached = self.db.get_link_status(url)
-        if cached is not None:
-            return cached
-        if Ctx._session is None:
-            Ctx._session = requests.Session()
-            Ctx._session.headers.update({"User-Agent": "Mozilla/5.0 docstor-linkcheck"})
-        status = 0
-        try:
-            r = Ctx._session.head(url, timeout=15, allow_redirects=True)
-            if r.status_code in (403, 405, 501):
-                r = Ctx._session.get(url, timeout=20, allow_redirects=True, stream=True)
-            status = r.status_code
-        except Exception:  # noqa: BLE001
-            try:
-                r = Ctx._session.get(url, timeout=20, allow_redirects=True, stream=True)
-                status = r.status_code
-            except Exception:  # noqa: BLE001
-                status = 0
-        self.db.set_link_status(url, status)
-        return status
+    """检查上下文。外链探测统一走 ds_http（带分档缓存），这里不再自带一套缓存。"""
 
 
 def run(args) -> int:

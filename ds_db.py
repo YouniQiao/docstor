@@ -61,12 +61,6 @@ CREATE INDEX IF NOT EXISTS idx_issues_doc ON issues(doc_key, status);
 CREATE INDEX IF NOT EXISTS idx_issues_rule ON issues(rule, status);
 CREATE INDEX IF NOT EXISTS idx_issues_lang ON issues(lang, status);
 
-CREATE TABLE IF NOT EXISTS link_cache(
-  url TEXT PRIMARY KEY,
-  status INTEGER,
-  checked_at TEXT
-);
-
 CREATE TABLE IF NOT EXISTS runs(
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   kind TEXT, target TEXT, started_at TEXT, finished_at TEXT, stats TEXT
@@ -291,29 +285,6 @@ class DB:
                 n += 1
         self.conn.commit()
         return n
-
-    # ---------- link cache ----------
-    def get_link_status(self, url: str, ttl_days: int = 7) -> int | None:
-        cur = self.conn.execute(
-            "SELECT status, checked_at FROM link_cache WHERE url=?", (url,))
-        row = cur.fetchone()
-        if not row:
-            return None
-        try:
-            from datetime import datetime, timedelta
-            ts = datetime.strptime(row["checked_at"], "%Y-%m-%d %H:%M:%S")
-            if datetime.now() - ts > timedelta(days=ttl_days):
-                return None
-        except Exception:  # noqa: BLE001
-            return None
-        return row["status"]
-
-    def set_link_status(self, url: str, status: int) -> None:
-        self.conn.execute(
-            "INSERT INTO link_cache(url,status,checked_at) VALUES(?,?,?) "
-            "ON CONFLICT(url) DO UPDATE SET status=excluded.status, checked_at=excluded.checked_at",
-            (url, status, now()))
-        self.conn.commit()
 
     # ---------- runs ----------
     def start_run(self, kind: str, target: str = "") -> int:

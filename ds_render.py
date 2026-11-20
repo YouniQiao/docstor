@@ -27,7 +27,17 @@ BASE = Path(__file__).resolve().parent
 DB = BASE / "data/docstor.db"
 URL = "https://developer.huawei.com/consumer/{lang}/doc/{cat}/{slug}"
 GENERIC = {"文档中心", "Document Center", "Documentation Center", "华为HarmonyOS开发者"}
-TTL = 30 * 24 * 3600
+TTL = 30 * 24 * 3600            # 渲染成功：官网没变，留 30 天
+TTL_MISSING = 3 * 24 * 3600     # 页面不在：可能在修，3 天重渲
+TTL_TIMEOUT = 1 * 24 * 3600     # 只是当时没渲染出来（官网慢/限流）：1 天就重试，不能当死链挂一个月
+
+
+def _ttl_for(verdict: str) -> int:
+    if verdict == "ok":
+        return TTL
+    if verdict == "timeout":
+        return TTL_TIMEOUT
+    return TTL_MISSING
 
 SCHEMA = """CREATE TABLE IF NOT EXISTS link_render(
     lang TEXT, cat TEXT, slug TEXT, verdict TEXT, title TEXT, bytes INTEGER, checked_at TEXT,
@@ -87,7 +97,7 @@ def check(lang: str, cat: str, slug: str, refresh: bool = False,
                          " WHERE lang=? AND cat=? AND slug=?", (lang, cat, slug)).fetchone()
         if row:
             try:
-                if time.time() - time.mktime(time.strptime(row[1], "%Y-%m-%d %H:%M:%S")) < TTL:
+                if time.time() - time.mktime(time.strptime(row[1], "%Y-%m-%d %H:%M:%S")) < _ttl_for(row[0]):
                     return row[0]
             except Exception:  # noqa: BLE001
                 pass
@@ -117,7 +127,7 @@ def check_url(url: str, refresh: bool = False, db_path: str | None = None) -> st
                          (url,)).fetchone()
         if row:
             try:
-                if time.time() - time.mktime(time.strptime(row[1], "%Y-%m-%d %H:%M:%S")) < TTL:
+                if time.time() - time.mktime(time.strptime(row[1], "%Y-%m-%d %H:%M:%S")) < _ttl_for(row[0]):
                     db.close()
                     return row[0]
             except Exception:  # noqa: BLE001

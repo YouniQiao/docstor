@@ -6,7 +6,7 @@
   · 404 / 410 → 真失效
   · 403 / 429 / 5xx / 超时 / DNS 失败 → 不可达（多半是反爬或临时故障，不算死链）
 先 HEAD，HEAD 被拒（403/405/501）再 GET 读一小段。
-结论存 link_http 表，缓存 7 天。
+结论存 link_http 表，保质期跟着结论走：2xx 30 天、404/410 3 天、其它 7 天。
 """
 from __future__ import annotations
 
@@ -20,7 +20,17 @@ import requests
 
 BASE = Path(__file__).resolve().parent
 DB = BASE / "data/docstor.db"
-TTL = 7 * 24 * 3600
+TTL = 7 * 24 * 3600             # 说不清的（403/429/5xx/超时/反爬）：7 天再试
+TTL_OK = 30 * 24 * 3600         # 200 一类：外链多半长期有效，30 天
+TTL_DEAD = 3 * 24 * 3600        # 404/410：真失效，官网/仓库随时可能补上，3 天重探
+
+
+def _ttl_for(status: int) -> int:
+    if 200 <= (status or 0) < 300:
+        return TTL_OK
+    if status in (404, 410):
+        return TTL_DEAD
+    return TTL
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
 
@@ -84,7 +94,7 @@ def status(url: str, refresh: bool = False) -> tuple[int, str, str]:
                          (url,)).fetchone()
         if row:
             try:
-                if time.time() - time.mktime(time.strptime(row[3], "%Y-%m-%d %H:%M:%S")) < TTL:
+                if time.time() - time.mktime(time.strptime(row[3], "%Y-%m-%d %H:%M:%S")) < _ttl_for(row[0]):
                     return row[0], row[1], row[2]
             except Exception:  # noqa: BLE001
                 pass

@@ -6,7 +6,7 @@ docs.url 是按「板块 → 目录」推算出来的（ds_db.official_url），
 `games-guides` 目录下，却按板块拼成了 `harmonyos-guides`，官网列的
 链接点开直接 404，想人工核对都做不到。
 
-这里按 getDocumentById 的实测结果缓存真实目录，TTL 半年。
+这里按 getDocumentById 的实测结果缓存真实目录，TTL 90 天。
 """
 from __future__ import annotations
 
@@ -21,7 +21,8 @@ import ds_official
 
 BASE = Path(__file__).resolve().parent
 DB = BASE / "data" / "docstor.db"
-TTL = 180 * 24 * 3600
+TTL = 90 * 24 * 3600   # 官网改目录名（harmonyos-guides → doccenter-*）最多晚 90 天发现，
+                       # 再长就会长期拼出 404 地址；34,734 条 ÷ 90 ≈ 每天 386 次重问
 
 SCHEMA = """CREATE TABLE IF NOT EXISTS doc_catalog(
     lang TEXT, slug TEXT, catalog TEXT, checked_at TEXT,
