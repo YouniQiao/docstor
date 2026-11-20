@@ -154,7 +154,7 @@ async function loadDays(){
     return;
   }
   wrap.innerHTML = `<table><thead><tr>
-      <th>日期</th><th class="num" title="新增">＋</th><th class="num" title="修改">改</th><th class="num" title="删除">删</th>
+      <th>日期</th><th class="num" title="新增">增</th><th class="num" title="修改">改</th><th class="num" title="删除">删</th>
       <th class="num">耗时 / 状态</th>
     </tr></thead><tbody>` + days.map(x => `
       <tr class="dayrow ${x.d === state.day ? 'sel' : ''}" data-day="${x.d}">
