@@ -13,7 +13,7 @@
   .pagehd .sp{flex:1}
   .pagehd button{border:none;background:none;padding:0;color:var(--muted);font-size:13px;cursor:pointer}
   .pagehd button:hover{color:var(--accent)}
-  .wrap{max-width:1000px;margin:22px auto 60px;padding:0 20px}
+  .wrap{max-width:1124px;margin:22px auto 60px;padding:0 20px}
   .card{background:#fff;border:1px solid var(--border);border-radius:12px;padding:18px 20px;margin-bottom:16px}
   .card h2{font-size:15px;margin:0 0 4px}
   .card .sub{color:var(--muted);font-size:12.5px;margin-bottom:14px}
@@ -48,6 +48,38 @@
   .login input{width:100%;padding:9px 11px;border:1px solid var(--border);border-radius:8px;font-size:14px}
   .login button{width:100%;margin-top:12px;padding:9px 0;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:14px;cursor:pointer}
   .err{color:#d92d20;font-size:12.5px;margin-top:8px}
+  /* 页签（检查项 / 数据缓存）*/
+  .subtabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:0 0 16px}
+  .subtabs button{border:none;background:none;padding:8px 14px;font-size:13.5px;color:var(--muted);
+                  cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .subtabs button.on{color:#1f2430;font-weight:600;border-bottom-color:var(--accent)}
+  .subtabs button:hover{color:#1f2430}
+  /* 缓存表 */
+  .cachehd{display:flex;align-items:center;gap:10px;margin:0 0 12px}
+  .cachehd .sp{flex:1}
+  .cachehd .sum{color:var(--muted);font-size:12.5px}
+  a.mini,button.mini{border:1px solid #dfe3ea;background:#fff;border-radius:8px;padding:5px 10px;
+        font-size:12.5px;color:#3d4657;cursor:pointer;text-decoration:none}
+  button.mini:hover{border-color:var(--accent);color:var(--accent)}
+  .cachewrap{overflow-x:auto}
+  table.cache td{padding:9px 8px;font-size:13px}
+  table.cache .n{font-variant-numeric:tabular-nums}
+  table.cache .tm{font-variant-numeric:tabular-nums}
+  table.cache .cname{font-family:ui-monospace,Menlo,monospace;font-size:12.5px}
+  table.cache .use{color:#4a5262;max-width:280px}
+  table.cache .ttl{color:var(--muted);font-size:12px;max-width:190px}
+  table.cache .tm{color:var(--muted);font-size:12px;white-space:nowrap;font-variant-numeric:tabular-nums}
+  .dl{display:inline-block;margin-left:6px;font-size:11.5px;color:#9aa3b2}
+  .dl.up{color:#0e8a5f}
+  .dl.down{color:#c0362c}
+  .exp.hot,.hot{color:#c0362c}
+  .exp.hot{font-weight:600}
+  .runbar{display:flex;align-items:center;gap:8px;background:#eef4ff;color:#1f4fd8;
+          border-radius:8px;padding:8px 12px;font-size:12.5px;margin:0 0 12px}
+  .runbar .dot{width:7px;height:7px;border-radius:50%;background:#2a6df4;animation:pulse 1s infinite}
+  @keyframes pulse{50%{opacity:.25}}
+  .cnote{color:var(--muted);font-size:12px;margin-top:10px}
+  .muted{color:#9aa3b2;font-size:12px}
   .toast{position:fixed;right:22px;bottom:22px;background:#1f2430;color:#fff;padding:9px 14px;border-radius:8px;font-size:13px;opacity:0;transform:translateY(6px);transition:.2s;pointer-events:none}
   .toast.on{opacity:1;transform:none}
 </style>
@@ -72,6 +104,12 @@
     <span class="sp"></span>
     <form method="post" action="/admin/logout" style="margin:0"><button>退出后台</button></form>
   </div>
+  <div class="subtabs">
+    <button class="on" data-tab="rules">检查项</button>
+    <button data-tab="cache">数据缓存</button>
+  </div>
+
+  <div class="pane" id="pane-rules">
   <div class="card">
     <h2>检查项</h2>
     <div class="sub">三态：<b>对外</b>＝所有人可见（全量问题、导出、订阅日报）；<b>调试中</b>＝照常检查、数据入库，但只有你能看到，不参与任何对外统计；<b>停用</b>＝不再检查，已有数据保留但不再更新。改动即时保存。</div>
@@ -109,6 +147,56 @@
       </tbody>
     </table>
   </div>
+  </div><!-- /pane-rules -->
+
+  <div class="pane" id="pane-cache" hidden>
+  <div class="card">
+    <div class="cachehd">
+      <h2 style="margin:0">数据缓存</h2>
+      <span class="sum" id="cache-sum">
+        {% if cache.error %}读取失败：{{ cache.error }}
+        {% else %}6 张表共 {{ '{:,}'.format(cache.total) }} 条 + sitemap {{ cache.rows[-1].n_text if cache.rows else '—' }} · 已过期 <b class="hot">{{ '{:,}'.format(cache.total_expired) }}</b> 条{% endif %}
+      </span>
+      <span class="sp"></span>
+      <button class="mini" id="cache-refresh">刷新</button>
+    </div>
+    <div class="runbar" id="runbar" hidden>
+      <span class="dot"></span><span id="runtext"></span>
+    </div>
+    <div class="cachewrap">
+    <table class="cache">
+      <thead><tr>
+        <th style="width:112px">缓存</th><th>用途</th><th style="width:196px">保质期</th>
+        <th class="n" style="width:100px">条数 / 大小</th><th style="width:124px">最老 → 最新</th>
+        <th class="n" style="width:64px">已过期</th><th style="width:118px">操作</th>
+      </tr></thead>
+      <tbody id="cache-body">
+      {% for r in cache.rows %}
+        <tr>
+          <td><span class="cname">{{ r.name }}</span></td>
+          <td class="use">{{ r.use }}</td>
+          <td class="ttl">{{ r.ttl }}</td>
+          <td class="n" title="较昨日 {{ '—' if r.delta is none else r.delta }}">{{ r.n_text }}<span class="dl {{ 'up' if r.delta and r.delta > 0 else ('down' if r.delta and r.delta < 0 else '') }}">{{ '—' if r.delta is none else '%+d'|format(r.delta) }}</span></td>
+          <td class="tm" title="{{ r.oldest_full }}{% if r.newest_full and r.newest_full != r.oldest_full %} → {{ r.newest_full }}{% endif %}">{% if r.single %}<span class="muted">更新</span> {{ r.newest }}{% else %}{{ r.oldest }}{% if r.newest and r.newest != r.oldest %} → {{ r.newest }}{% endif %}{% endif %}</td>
+          <td class="n exp {{ 'hot' if r.expired else '' }}">{{ '{:,}'.format(r.expired) }}</td>
+          <td>{% if r.expired and r.recheck %}<button class="mini rc" data-kind="{{ r.recheck }}">重判 {{ '{:,}'.format(r.expired) }} 条</button>{% elif r.expired %}<span class="muted" title="渲染很贵，随每日检查逐条重试">随每日检查重试</span>{% else %}<span class="muted">—</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <div class="cnote">
+      全部是<b>懒过期</b>：过期不代表被清掉，而是下次用到时重判一次。「已过期」= 下次被用到时会重判的条数。
+      条数后面紧跟的灰色小字是<b>较昨日的变化</b>（当天第一次统计时没有对比值，显示灰色 —）。
+      <br>保质期口径与代码一致：<code>link_official</code>=<code>ds_official</code>（ok 30 / 有问题 3 天）、
+      <code>link_http</code>=<code>ds_http</code>（2xx 30 / 404·410 3 / 其它 7）、
+      <code>link_render</code>·<code>url_render</code>=<code>ds_render</code>（ok 30 / missing 3 / timeout 1）、
+      <code>doc_catalog</code>=<code>ds_catalog</code>（90 天）。
+      只有 <code>link_official</code> / <code>link_http</code> 能在本页批量重判；渲染类（link_render / url_render）太重，随每日检查逐条重试。
+      派生表 <code>doc_cat</code> 与 <code>sync_items</code> 每次同步重建，不在此列。
+    </div>
+  </div>
+  </div><!-- /pane-cache -->
 </div>
 
 <div class="toast" id="toast"></div>
@@ -155,6 +243,85 @@ document.querySelectorAll('tr[data-rule]').forEach(tr=>{
   });
   tr.querySelectorAll('.lg').forEach(c=>c.addEventListener('change', ()=>saveRule(tr, tr.dataset.state)));
 });
+
+/* ── 页签：检查项 / 数据缓存 ── */
+const tabBtns = [...document.querySelectorAll('.subtabs button')];
+const panes = { rules: document.getElementById('pane-rules'), cache: document.getElementById('pane-cache') };
+function showTab(name){
+  tabBtns.forEach(b => b.classList.toggle('on', b.dataset.tab === name));
+  Object.entries(panes).forEach(([k, el]) => { if (el) el.hidden = (k !== name); });
+  if (name === 'cache') { history.replaceState(null, '', '#cache'); loadCache(); }
+  else history.replaceState(null, '', location.pathname + location.search);
+}
+tabBtns.forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
+
+/* ── 数据缓存：渲染 / 刷新 / 重判 ── */
+let cacheTimer = null;
+function dl(d){
+  if (d === null || d === undefined) return '<span class="dl">—</span>';
+  const cls = d > 0 ? 'up' : (d < 0 ? 'down' : '');
+  return `<span class="dl ${cls}">${d > 0 ? '+' : ''}${d.toLocaleString()}</span>`;
+}
+function renderCache(d){
+  const n = x => (x || 0).toLocaleString();
+  const sm = d.rows.find(r => r.name === 'sitemap');
+  document.getElementById('cache-sum').innerHTML =
+    `6 张表共 ${n(d.total)} 条 + sitemap ${sm ? sm.n_text : '—'} · 已过期 <b class="hot">${n(d.total_expired)}</b> 条`;
+  document.getElementById('cache-body').innerHTML = d.rows.map(r => `
+    <tr>
+      <td><span class="cname">${r.name}</span></td>
+      <td class="use">${r.use}</td>
+      <td class="ttl">${r.ttl}</td>
+      <td class="n" title="较昨日 ${r.delta ?? '—'}">${r.n_text}${dl(r.delta)}</td>
+      <td class="tm" title="${r.oldest_full || ''}${r.newest_full && r.newest_full !== r.oldest_full ? ' → ' + r.newest_full : ''}">${
+        r.single ? `<span class="muted">更新</span> ${r.newest}`
+                 : `${r.oldest}${r.newest && r.newest !== r.oldest ? ' → ' + r.newest : ''}`}</td>
+      <td class="n exp ${r.expired ? 'hot' : ''}">${n(r.expired)}</td>
+      <td>${r.expired && r.recheck ? `<button class="mini rc" data-kind="${r.recheck}">重判 ${n(r.expired)} 条</button>`
+            : (r.expired ? '<span class="muted" title="渲染很贵，随每日检查逐条重试">随每日检查重试</span>'
+                         : '<span class="muted">—</span>')}</td>
+    </tr>`).join('');
+  wireRecheck();
+  const bar = document.getElementById('runbar'), txt = document.getElementById('runtext');
+  const run = d.running;
+  clearTimeout(cacheTimer);
+  if (run && !run.finished_at) {
+    bar.hidden = false;
+    txt.textContent = `正在重判 ${run.kind === 'official' ? 'link_official（官网判定）' : 'link_http（外链）'}：`
+      + `${run.done}/${run.count}（成功 ${run.ok}，失败 ${run.err}）`;
+    cacheTimer = setTimeout(loadCache, 3000);
+  } else if (run && run.finished_at) {
+    bar.hidden = false;
+    txt.textContent = `上次重判 ${run.kind === 'official' ? 'link_official' : 'link_http'} 完成：${run.count} 条，`
+      + `用时 ${run.seconds ?? '—'}s（${run.finished_at}）`;
+    cacheTimer = setTimeout(() => { bar.hidden = true; }, 8000);
+  } else {
+    bar.hidden = true;
+  }
+}
+async function loadCache(){
+  try {
+    const r = await fetch('/api/admin/cache', { cache: 'no-store' });
+    const d = await r.json();
+    if (d.ok) renderCache(d); else toast('读取失败：' + (d.error || r.status));
+  } catch (e) { toast('读取失败：' + e.message); }
+}
+function wireRecheck(){
+  document.querySelectorAll('button.rc').forEach(b => b.onclick = async () => {
+    b.disabled = true;
+    const label = b.textContent; b.textContent = '启动中…';
+    const r = await fetch('/api/admin/cache/recheck', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ kind: b.dataset.kind })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (d.ok) { toast(d.count ? `已开始重判 ${d.count} 条` : (d.msg || '无需重判')); setTimeout(loadCache, 800); }
+    else { toast('失败：' + (d.error || r.status)); b.disabled = false; b.textContent = label; }
+  });
+}
+document.getElementById('cache-refresh').onclick = loadCache;
+wireRecheck();
+if (location.hash === '#cache') showTab('cache');
 </script>
 {% endif %}
 </body>

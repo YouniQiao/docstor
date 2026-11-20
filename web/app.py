@@ -823,7 +823,51 @@ def admin_page():
     groups = [{"name": RULE_GROUP_NAMES[key], "rules": buckets[key],
                "n": sum(r["n"] for r in buckets[key])}
               for key in RULE_GROUP_ORDER if buckets.get(key)]
-    return render_template("admin.html", authed=True, err="", groups=groups)
+    return render_template("admin.html", authed=True, err="", groups=groups,
+                           cache=_cache_stats())
+
+
+def _cache_stats() -> dict:
+    """看板数据；读失败也不该把 /admin 整个打挂。"""
+    try:
+        import ds_cache
+        return ds_cache.stats()
+    except Exception as e:  # noqa: BLE001
+        return {"rows": [], "total": 0, "total_expired": 0, "error": str(e),
+                "day": "", "at": "", "running": None}
+
+
+@app.get("/api/admin/cache")
+def api_admin_cache():
+    if not is_admin():
+        return jsonify({"ok": False, "error": "未登录"}), 403
+    return jsonify({"ok": True, **_cache_stats()})
+
+
+@app.post("/api/admin/cache/recheck")
+def api_admin_cache_recheck():
+    """把某张缓存里「已过期」的结论重判一遍（子进程跑，立即返回）。"""
+    if not is_admin():
+        return jsonify({"ok": False, "error": "未登录"}), 403
+    kind = ((request.get_json(silent=True) or {}).get("kind") or "").strip()
+    if kind not in ("official", "http"):
+        return jsonify({"ok": False, "error": "kind 必须是 official 或 http"}), 400
+    import ds_cache
+    st = _cache_stats()
+    running = st.get("running")
+    if running and not running.get("finished_at"):
+        return jsonify({"ok": False, "error": f"已经在重判 {running['kind']}（{running.get('done')}/{running.get('count')}）"}), 409
+    table = "link_official" if kind == "official" else "link_http"
+    n = conn().execute(f"SELECT COUNT(*) FROM {table} WHERE {ds_cache.expired_where(table)}").fetchone()[0]
+    if n == 0:
+        return jsonify({"ok": True, "count": 0, "msg": "没有过期的条目，不用重判"})
+    logf = BASE / "logs" / f"cache_recheck_{kind}.log"
+    logf.parent.mkdir(exist_ok=True)
+    with open(logf, "ab") as fh:
+        subprocess.Popen([sys.executable, str(BASE / "scripts" / "recheck_cache.py"),
+                          "--kind", kind], cwd=str(BASE), stdout=fh, stderr=fh,
+                         start_new_session=True)
+    return jsonify({"ok": True, "count": n})
 
 
 @app.post("/admin/logout")
