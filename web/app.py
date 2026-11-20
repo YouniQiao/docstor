@@ -212,11 +212,21 @@ def _enabled_rules() -> list[str]:
     return rules
 
 
-def _enabled_filter(col: str = "rule") -> tuple[str, list]:
+def _enabled_filter(col: str = "rule", lang_col: str | None = None) -> tuple[str, list]:
+    """「已开启且对外」的规则过滤；带上语言限制（见 ds_rules.sql_filter）。"""
     rules = _enabled_rules()
     if not rules:
         return "1=0", []
-    return f"{col} IN ({','.join('?' * len(rules))})", rules
+    if lang_col is None:                       # 跟着别名走：i.rule → i.lang
+        lang_col = (col.rsplit(".", 1)[0] + ".lang") if "." in col else "lang"
+    pv = _preview_rule()
+    try:
+        clause, args = ds_rules.sql_filter(conn(), checks.REGISTRY,
+                                           rule_col=col, lang_col=lang_col,
+                                           extra_rules=[pv] if pv else None)
+        return clause.lstrip().removeprefix("AND ").strip(), args
+    except Exception:  # noqa: BLE001  兜底：至少不忽略规则白名单
+        return f"{col} IN ({','.join('?' * len(rules))})", rules
 
 
 @app.get("/api/sidebar-counts")

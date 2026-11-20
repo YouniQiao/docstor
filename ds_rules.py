@@ -94,6 +94,26 @@ def save(conn: sqlite3.Connection, payload: dict[str, dict]) -> int:
     return n
 
 
+def _visible_pairs(conn: sqlite3.Connection, registry: dict) -> list[tuple[str, list[str]]]:
+    """对外可见的规则 + 它适用的语言（enabled & visible）。"""
+    cfg = all_settings(conn)
+    out: list[tuple[str, list[str]]] = []
+    for rule, meta in registry.items():
+        c = cfg.get(rule)
+        if c is not None:
+            if not c["enabled"] or not c["visible"]:
+                continue
+            langs = list(c["langs"] or ["cn", "en"])
+        else:
+            if not meta.get("default_on", True):
+                continue
+            if not meta.get("default_visible", meta.get("default_on", True)):
+                continue
+            langs = list(meta.get("langs") or ("cn", "en"))
+        out.append((rule, langs))
+    return out
+
+
 def visible_rules(conn: sqlite3.Connection, registry: dict,
                   lang: str | None = None) -> list[str]:
     """对外可见的规则（enabled & visible & 语言匹配）。
@@ -101,24 +121,57 @@ def visible_rules(conn: sqlite3.Connection, registry: dict,
     所有展示口径都必须走这里：全量问题、卡片数字、facets、导出、订阅预览、日报。
     「调试中」的规则能在后台看到数字，但不从这里出来。
     """
+    return [r for r, langs in _visible_pairs(conn, registry)
+            if not (lang and lang not in langs)]
+
+
+def visible_rule_langs(conn: sqlite3.Connection, registry: dict) -> dict[str, list[str]]:
+    """{规则: 适用语言}，只含对外可见的规则。"""
+    return dict(_visible_pairs(conn, registry))
+
+
+def _langs_map(conn: sqlite3.Connection, registry: dict) -> dict[str, list[str]]:
+    """{规则: 适用语言}，覆盖所有规则（含调试中/停用），供 sql_filter 判断哪些语言该隐藏。"""
     cfg = all_settings(conn)
-    out: list[str] = []
+    out: dict[str, list[str]] = {}
     for rule, meta in registry.items():
         c = cfg.get(rule)
         if c is not None:
-            if not c["enabled"] or not c["visible"]:
-                continue
-            langs = c["langs"] or ["cn", "en"]
+            out[rule] = list(c["langs"] or ["cn", "en"])
         else:
-            if not meta.get("default_on", True):
-                continue
-            if not meta.get("default_visible", meta.get("default_on", True)):
-                continue
-            langs = list(meta.get("langs") or ("cn", "en"))
-        if lang and lang not in langs:
-            continue
-        out.append(rule)
+            out[rule] = list(meta.get("langs") or ("cn", "en"))
     return out
+
+
+def sql_filter(conn: sqlite3.Connection, registry: dict,
+               rule_col: str = "rule", lang_col: str = "lang",
+               extra_rules: list[str] | None = None) -> tuple[str, list]:
+    """「对外可见」的 SQL 过滤片段（带前导 AND），展示与统计共用这一份口径。
+
+    除了把范围限定在可见规则内，还会排掉「规则只跑某种语言」时另一种语言的历史问题——
+    比如 AGC名称排查只跑中文，英文那批旧命中不该再出现在页面/导出/邮件里
+    （它们不会再被复检，留着就是永远不动的旧结论）。
+    """
+    rules = visible_rules(conn, registry)
+    for r in (extra_rules or []):          # 预览页：额外放行一条调试中的规则
+        if r and r not in rules:
+            rules.append(r)
+    if not rules:
+        return " AND 1=0", []
+    langs_of = _langs_map(conn, registry)
+    clause = f" AND {rule_col} IN ({','.join('?' * len(rules))})"
+    args: list = list(rules)
+    ors, extra = [], []
+    for r in rules:
+        langs = [x for x in (langs_of.get(r) or ["cn", "en"]) if x in ("cn", "en")]
+        missing = [x for x in ("cn", "en") if x not in langs]
+        if missing:
+            ors.append(f"({rule_col}=? AND {lang_col} IN ({','.join('?' * len(missing))}))")
+            extra += [r] + missing
+    if ors:
+        clause += " AND NOT (" + " OR ".join(ors) + ")"
+        args += extra
+    return clause, args
 
 
 def effective(conn: sqlite3.Connection, registry: dict, lang: str) -> list[str]:

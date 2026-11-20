@@ -52,10 +52,7 @@ def _enabled_rules(con: sqlite3.Connection) -> tuple[str, list]:
     try:
         import checks
         import ds_rules   # 统计口径与展示一致：调试中（跑但不对外）的规则不计入对外数字
-        enabled = ds_rules.visible_rules(con, checks.REGISTRY)
-        if not enabled:
-            return "", []
-        return (" AND rule IN (" + ",".join("?" * len(enabled)) + ")", enabled)
+        return ds_rules.sql_filter(con, checks.REGISTRY)
     except Exception:  # noqa: BLE001
         return "", []
 

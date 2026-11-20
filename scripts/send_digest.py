@@ -55,13 +55,19 @@ def conn() -> sqlite3.Connection:
 
 
 def _enabled_filter_factory(c: sqlite3.Connection):
-    # 只用「对外」的规则：调试中的规则不进度量，避免订阅预览和日报提前泄露
+    # 只用「对外」的规则：调试中的规则不进度量，避免订阅预览和日报提前泄露。
+    # 语言限制也在 sql_filter 里：某规则只跑中文时，英文那批旧命中不进日报
     rules = ds_rules.visible_rules(c, checks.REGISTRY)
 
     def f(col: str):
-        if not rules:
-            return "1=0", []
-        return f"{col} IN ({','.join('?' * len(rules))})", list(rules)
+        try:
+            clause, args = ds_rules.sql_filter(c, checks.REGISTRY, rule_col=col,
+                                               lang_col=(col.rsplit(".", 1)[0] + ".lang"))
+            return clause.lstrip().removeprefix("AND ").strip(), args
+        except Exception:  # noqa: BLE001
+            if not rules:
+                return "1=0", []
+            return f"{col} IN ({','.join('?' * len(rules))})", list(rules)
 
     f.rules = list(rules)   # 供 collect_for 判断某个关注范围是否指向「调试中/已停用」的规则
     return f
