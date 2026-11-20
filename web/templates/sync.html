@@ -173,7 +173,7 @@ function durCell(x){
     const names = fails.map(f => `${f.target}${f.kind === 'check' ? '（检查）' : ''}`);
     const running = fails.some(f => {
       const t = new Date((f.started_at || '').replace(' ', 'T')).getTime();
-      return t && Date.now() - t < 100 * 60 * 1000;
+      return t && Date.now() - t < 20 * 60 * 1000;   // 正常板块最长十几分钟
     });
     out.push(`<div class="bad" title="${esc(names.join('、'))}">`
       + `${running ? '运行中…' : fails.length + ' 项未跑完'}</div>`);
