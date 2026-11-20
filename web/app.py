@@ -294,8 +294,9 @@ def api_issues():
                    d.url AS doc_url, d.is_api
             FROM issues i LEFT JOIN docs d ON d.doc_key = i.doc_key
             WHERE {w}
-            ORDER BY CASE i.severity WHEN 'error' THEN 0 WHEN 'warn' THEN 1 ELSE 2 END,
-                     i.last_seen DESC, i.id DESC
+            ORDER BY i.first_seen DESC,
+                     CASE i.severity WHEN 'error' THEN 0 WHEN 'warn' THEN 1 ELSE 2 END,
+                     i.id DESC
             LIMIT ? OFFSET ?""", args + [size, (page - 1) * size]).fetchall()
     items = []
     for r in rows:
@@ -489,8 +490,9 @@ def api_export():
             LEFT JOIN docs d ON d.doc_key = i.doc_key
             LEFT JOIN doc_cat c ON c.lang||'/'||c.section||'/'||c.slug = i.doc_key
             WHERE {w}
-            ORDER BY CASE i.severity WHEN 'error' THEN 0 WHEN 'warn' THEN 1 ELSE 2 END,
-                     i.rule, i.last_seen DESC, i.id DESC""", args).fetchall()
+            ORDER BY i.first_seen DESC,
+                     CASE i.severity WHEN 'error' THEN 0 WHEN 'warn' THEN 1 ELSE 2 END,
+                     i.id DESC""", args).fetchall()
 
     wb = Workbook()
     ws = wb.active

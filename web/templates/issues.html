@@ -46,7 +46,7 @@
   #list table{table-layout:fixed;width:100%;min-width:820px}
   #list td.type{padding-top:9px}
   #list th.c-type{width:126px} #list th.c-doc{width:94px}
-  #list th.c-off{width:94px} #list th.c-date{width:105px}
+  #list th.c-off{width:94px} #list th.c-date{width:106px}
   #list td.msg{overflow-wrap:anywhere}
   .msg-extra{margin-top:6px}
   .msg-extra .issue-link{color:var(--accent);text-decoration:none;overflow-wrap:anywhere}
@@ -262,7 +262,7 @@ async function loadFacets(){
   };
   const total = d.langs.reduce((a,b)=>a+b.n,0);
   document.getElementById('cards').innerHTML =
-    `<div class="card" id="card-total" style="cursor:pointer" title="查看全部未解决问题（清空其余筛选）"><div class="n">${total}</div><div class="l">未解决问题总数</div></div>` +
+    `<div class="card" id="card-total" style="cursor:pointer" title="查看全部未解决问题（清空其余筛选）"><div class="n">${Number(total).toLocaleString()}</div><div class="l">未解决问题总数</div></div>` +
     d.rules.map(r=>`<div class="card${r.enabled === false ? ' offcard' : ''}" data-rule="${r.rule}" style="cursor:pointer"><div class="n">${r.n}${r.enabled === false ? '<span class="tagoff">已关闭</span>' : ''}</div><div class="l">${esc(r.label)}</div></div>`).join('');
   document.querySelectorAll('#cards .card[data-rule]').forEach(c=>c.onclick=()=>{
     document.getElementById('f-rule').value=c.dataset.rule;
@@ -443,7 +443,7 @@ async function loadList(){
   else {
     document.getElementById('list').innerHTML = `<table><thead><tr>
       <th class="c-type">类型</th><th>问题</th>
-      <th class="c-doc">镜像文档</th><th class="c-off">官网文档</th><th class="c-date">识别日期</th>
+      <th class="c-doc">镜像文档</th><th class="c-off">官网文档</th><th class="c-date" title="按识别日期倒序，最新识别的问题在最前">识别日期 ↓</th>
       <th class="c-op">操作</th></tr></thead><tbody>` +
       d.items.map(it=>{
         ITEMS[it.id] = it;
@@ -459,7 +459,7 @@ async function loadList(){
               ? `<a href="${esc(it.official_url)}" target="_blank" rel="noopener noreferrer" title="${esc(it.official_url)}">链接</a>`
               : (it.official_gone ? '<span class="meta" title="官网已查不到这篇">已下架</span>'
                                   : '<span class="meta">—</span>')}</td>
-          <td class="meta c-date">${esc((it.first_seen||'').slice(0,10))}</td>
+          <td class="meta c-date" title="${esc(it.first_seen||'')}">${esc((it.first_seen||'').slice(5,16))}</td>
           <td class="c-op">${opCell(it)}</td>
         </tr>`;
       }).join('') + '</tbody></table>';
