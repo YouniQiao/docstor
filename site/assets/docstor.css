@@ -172,3 +172,29 @@ body > header.tnav{position:fixed;left:0;right:0;top:0;z-index:100}   /* 选择�
   .content{top:0;padding-top:74px}   /* 窄屏 .content 变 static，只能靠内边距让开 */
   .sidebar{top:54px}
 }
+
+/* ── 滚动条加宽：目录（侧栏）等内滚区域默认太细，鼠标不好按 ── */
+.sidebar, .ds-panel-body, .ds-toc, .markdown-section pre{
+  scrollbar-width: auto;                  /* Firefox：用系统默认宽度，比 thin 好按 */
+  scrollbar-color: #b3bdcb transparent;
+}
+.sidebar::-webkit-scrollbar,
+.ds-panel-body::-webkit-scrollbar,
+.ds-toc::-webkit-scrollbar,
+.markdown-section pre::-webkit-scrollbar{width:16px;height:16px}
+.sidebar::-webkit-scrollbar-track,
+.ds-panel-body::-webkit-scrollbar-track,
+.ds-toc::-webkit-scrollbar-track,
+.markdown-section pre::-webkit-scrollbar-track{background:transparent}
+.sidebar::-webkit-scrollbar-thumb,
+.ds-panel-body::-webkit-scrollbar-thumb,
+.ds-toc::-webkit-scrollbar-thumb,
+.markdown-section pre::-webkit-scrollbar-thumb{
+  background:#b3bdcb;border-radius:8px;border:2px solid transparent;background-clip:content-box;min-height:44px}
+.sidebar::-webkit-scrollbar-thumb:hover,
+.ds-panel-body::-webkit-scrollbar-thumb:hover,
+.ds-toc::-webkit-scrollbar-thumb:hover,
+.markdown-section pre::-webkit-scrollbar-thumb:hover{background:#96a1b2;background-clip:content-box}
+/* docsify 自带 .sidebar:hover::-webkit-scrollbar-thumb 会把滑块变成半透明灰，这里压住，鼠标移上去只是颜色变深 */
+.sidebar:hover::-webkit-scrollbar-thumb{background:#96a1b2;background-clip:content-box}
+.sidebar:hover::-webkit-scrollbar-track{background:transparent}
