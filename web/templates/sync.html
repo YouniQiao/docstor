@@ -11,8 +11,21 @@
   header h1{font-size:17px;margin:0}
   header a{color:var(--muted);text-decoration:none;font-size:13px}
   header a:hover{color:var(--accent)}
-  .wrap{max-width:1180px;margin:18px auto;padding:0 20px 60px}
-  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+  .wrap{max-width:1440px;margin:18px auto;padding:0 20px 60px}
+  .split{display:grid;grid-template-columns:minmax(360px,440px) minmax(0,1fr);gap:14px;align-items:start}
+  .col-days{position:sticky;top:12px;margin-bottom:0}
+  #days-wrap{max-height:calc(100vh - 250px);overflow:auto;border-top:1px solid var(--border)}
+  #days-wrap table{font-size:12.5px}
+  #days-wrap thead th{position:sticky;top:0;z-index:2;background:#fafbfc;box-shadow:inset 0 -1px 0 #eef0f3}
+  #days-wrap th,#days-wrap td{padding:6px 7px;line-height:1.4}
+  #days-wrap .dur div{line-height:1.45}
+  .col-detail{min-width:0}
+  @media (max-width:1100px){
+    .split{grid-template-columns:1fr}
+    .col-days{position:static}
+    #days-wrap{max-height:none}
+  }
+  .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:16px}
   .card{background:#fff;border:1px solid var(--border);border-radius:10px;padding:12px 14px}
   .card .n{font-size:22px;font-weight:700}
   .card .l{color:var(--muted);font-size:12px;margin-top:2px}
@@ -74,12 +87,14 @@
     <div class="card"><div class="n" id="k-last">—</div><div class="l">最近一次同步</div></div>
   </div>
 
-  <div class="panel">
+  <div class="split">
+
+  <div class="panel col-days">
     <div class="ptitle">按日期汇总（点一行看当天变更明细）</div>
     <div id="days-wrap"><div class="empty">加载中…</div></div>
   </div>
 
-  <div class="panel" id="detail" style="display:none">
+  <div class="panel col-detail" id="detail">
     <div class="ptitle" id="detail-title">当日变更明细</div>
     <div class="filters">
       <select id="f-kind">
@@ -104,6 +119,8 @@
       <button id="p-prev">上一页</button>
       <button id="p-next">下一页</button>
     </div>
+  </div>
+
   </div>
 </div>
 
@@ -142,8 +159,8 @@ async function loadDays(){
     return;
   }
   wrap.innerHTML = `<table><thead><tr>
-      <th>日期</th><th class="num">新增</th><th class="num">修改</th><th class="num">删除</th>
-      <th class="num">耗时 / 状态</th><th>明细</th>
+      <th>日期</th><th class="num" title="新增">＋</th><th class="num" title="修改">改</th><th class="num" title="删除">删</th>
+      <th class="num">耗时 / 状态</th>
     </tr></thead><tbody>` + days.map(x => `
       <tr class="dayrow ${x.d === state.day ? 'sel' : ''}" data-day="${x.d}">
         <td>${x.d}</td>
@@ -151,7 +168,6 @@ async function loadDays(){
         <td class="num ${x.modified ? 'mod' : 'zero'}">${NF(x.modified)}</td>
         <td class="num ${x.deleted ? 'del' : 'zero'}">${NF(x.deleted)}</td>
         <td class="num dur">${durCell(x)}</td>
-        <td><a class="link" href="#" data-day="${x.d}">查看</a></td>
       </tr>`).join('') + '</tbody></table>';
 
   wrap.querySelectorAll('[data-day]').forEach(el => el.addEventListener('click', ev => {
@@ -165,27 +181,29 @@ async function loadDays(){
 function durCell(x){
   const ig = Math.round((x.ingest_secs || 0) / 60);
   const ck = Math.round((x.check_secs || 0) / 60);
-  const out = [];
-  out.push(`<div>${ig ? ig + ' 分钟抓取' : '—'}</div>`);
-  if (ck) out.push(`<div class="ck">${ck} 分钟检查</div>`);
   const fails = x.fails || [];
-  if (fails.length){
-    const names = fails.map(f => `${f.target}${f.kind === 'check' ? '（检查）' : ''}`);
-    const running = fails.some(f => {
-      const t = new Date((f.started_at || '').replace(' ', 'T')).getTime();
-      return t && Date.now() - t < 20 * 60 * 1000;   // 正常板块最长十几分钟
-    });
-    out.push(`<div class="bad" title="${esc(names.join('、'))}">`
-      + `${running ? '运行中…' : fails.length + ' 项未跑完'}</div>`);
-  }
+  const names = fails.map(f => `${f.target}${f.kind === 'check' ? '（检查）' : ''}`);
+  const running = fails.some(f => {
+    const t = new Date((f.started_at || '').replace(' ', 'T')).getTime();
+    return t && Date.now() - t < 20 * 60 * 1000;   // 正常板块最长十几分钟
+  });
+  const bad = fails.length
+    ? `<span class="bad" title="${esc(names.join('、'))}">${running ? '运行中…' : fails.length + ' 项未跑完'}</span>`
+    : '';
+  const out = [`<div>${ig ? ig + ' 分钟抓取' : '—'}</div>`];
+  const sub = [ck ? `${ck} 分钟检查` : '', bad].filter(Boolean).join(' · ');
+  if (sub) out.push(`<div class="ck">${sub}</div>`);
   return out.join('');
 }
 
 function selectDay(day){
   state.day = day; state.page = 1;
-  document.getElementById('detail').style.display = 'block';
   document.getElementById('detail-title').textContent = day + ' 的文档变更明细';
-  document.querySelectorAll('.dayrow').forEach(tr => tr.classList.toggle('sel', tr.dataset.day === day));
+  document.querySelectorAll('.dayrow').forEach(tr => {
+    const hit = tr.dataset.day === day;
+    tr.classList.toggle('sel', hit);
+    if (hit) tr.scrollIntoView({block: 'nearest'});
+  });
   loadItems();
 }
 
@@ -244,7 +262,9 @@ document.getElementById('f-q').addEventListener('input', () => {
 loadDays().then(() => {
   // 支持从外部直接打开某一天：/sync?date=2026-11-19（邮件里的「当天变更记录」链接）
   const d = new URLSearchParams(location.search).get('date');
-  if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) selectDay(d);
+  if (d && /^\d{4}-\d{2}-\d{2}$/.test(d)) { selectDay(d); return; }
+  const first = document.querySelector('.dayrow');
+  if (first) selectDay(first.dataset.day);   // 默认展示最近一天，右栏不空着
 });
 </script>
 </body>
