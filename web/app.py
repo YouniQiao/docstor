@@ -762,8 +762,9 @@ def api_tree():
 
 # ---------------- 全量问题页 ----------------
 # 检查项分类：规则前缀 → 页面上的分组名（顺序即展示顺序；没有规则的分组不显示）
-RULE_GROUP_NAMES = {"link": "链接检查", "image": "图片检查", "text": "文本检查"}
-RULE_GROUP_ORDER = ["link", "image", "text"]
+RULE_GROUP_NAMES = {"link": "链接检查", "special": "专项检查",
+                   "image": "图片检查", "text": "文本检查"}
+RULE_GROUP_ORDER = ["link", "special", "image", "text"]
 
 
 @app.route("/admin", methods=["GET", "POST"])

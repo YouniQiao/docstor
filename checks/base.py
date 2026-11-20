@@ -31,10 +31,18 @@ class Issue:
 
 
 def register(rule: str, label: str, severity: str = "warn",
-             langs: tuple[str, ...] = ("cn", "en"), default_on: bool = True):
+             langs: tuple[str, ...] = ("cn", "en"), default_on: bool = True,
+             default_visible: bool | None = None):
+    """注册一个检查项。
+
+    default_visible=False 表示新规则默认「调试中」：照常检查、数据入库，
+    但不出现在全量问题/导出/订阅日报，只在 /admin 里能看（用 /admin/rule/<rule>）。
+    """
     def deco(fn):
         REGISTRY[rule] = {"label": label, "severity": severity, "langs": langs,
-                          "fn": fn, "default_on": default_on}
+                          "fn": fn, "default_on": default_on,
+                          "default_visible": (default_on if default_visible is None
+                                              else default_visible)}
         return fn
     return deco
 
