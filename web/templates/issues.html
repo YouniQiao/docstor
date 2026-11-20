@@ -219,7 +219,20 @@ function opCell(it){
   return `<button class="mini2" data-act="ignore" data-id="${it.id}">忽略</button>`;
 }
 
+const ITEMS = {};   // 本页的问题，按 id 存一份，确认框里用来显示「忽略的是哪一条」
+
 async function issueAct(kind, id){
+  const it = ITEMS[id] || {};
+  if (kind === 'ignore'){
+    const label = it.rule_label || '这条问题';
+    const doc = it.doc_key || '';
+    const ok = confirm(
+      `忽略这条「${label}」问题？\n\n`
+      + `${doc ? doc + '\n' : ''}`
+      + '忽略后它不再出现在全量问题、导出和订阅日报里，\n'
+      + '之后可以在「问题状态 = 已忽略」里恢复。');
+    if (!ok) return;
+  }
   const r = await fetch(`/api/issues/${id}/${kind}`, {method: 'POST'});
   let d = {};
   try { d = await r.json(); } catch(e){}
@@ -232,7 +245,9 @@ async function issueAct(kind, id){
 
 document.getElementById('list').addEventListener('click', e => {
   const b = e.target.closest('button[data-act]');
-  if (b) issueAct(b.dataset.act, b.dataset.id);
+  if (!b || b.disabled) return;
+  b.disabled = true;
+  issueAct(b.dataset.act, b.dataset.id).finally(() => { b.disabled = false; });
 });
 
 async function loadFacets(){
@@ -431,6 +446,7 @@ async function loadList(){
       <th class="c-doc">镜像文档</th><th class="c-off">官网文档</th><th class="c-date">识别日期</th>
       <th class="c-op">操作</th></tr></thead><tbody>` +
       d.items.map(it=>{
+        ITEMS[it.id] = it;
         const [lang,section,slug] = it.doc_key.split('/');
         const frag = it.anchorId ? '#' + encodeURIComponent(it.anchorId) : '';
         return `<tr>
