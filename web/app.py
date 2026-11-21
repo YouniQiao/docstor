@@ -921,6 +921,16 @@ RULE_GROUP_NAMES = {"link": "链接检查", "special": "专项检查",
                    "image": "图片检查", "text": "文本检查"}
 RULE_GROUP_ORDER = ["link", "special", "image", "text"]
 
+# 只在 /admin 界面上挂出来、规则逻辑还没实现的检查项：
+# 不进 checks.REGISTRY，所以每日检查和手动运行都不会碰它们；状态列显示「待实现」，
+# 不写 rule_settings，等规则定下来再挪进 REGISTRY 并删掉这里的条目。
+PENDING_RULES = [
+    {"rule": "image.zh_in_en", "label": "英文图片包含中文",
+     "group": "image", "langs": ["en"], "severity": "warn"},
+    {"rule": "image.missing", "label": "图片缺失",
+     "group": "image", "langs": ["cn", "en"], "severity": "error"},
+]
+
 
 @app.route("/admin", methods=["GET", "POST"])
 def admin_page():
@@ -972,8 +982,14 @@ def admin_page():
             "langs": _langs,
             "n": sum(_by_lang.get((rule, lg), 0) for lg in _langs),
             "updated_at": c.get("updated_at", "")})
+    for p in PENDING_RULES:
+        buckets.setdefault(p["group"], []).append({
+            "rule": p["rule"], "label": p["label"], "severity": p["severity"],
+            "enabled": False, "visible": False, "state": "pending", "pending": True,
+            "langs": p["langs"], "n": 0, "updated_at": ""})
     groups = [{"name": RULE_GROUP_NAMES[key], "rules": buckets[key],
-               "n": sum(r["n"] for r in buckets[key])}
+               "n": sum(r["n"] for r in buckets[key]),
+               "pending_only": all(r.get("pending") for r in buckets[key])}
               for key in RULE_GROUP_ORDER if buckets.get(key)]
     return render_template("admin.html", authed=True, err="", groups=groups,
                            cache=_cache_stats())
