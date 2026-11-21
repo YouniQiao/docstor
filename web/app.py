@@ -924,12 +924,7 @@ RULE_GROUP_ORDER = ["link", "special", "image", "text"]
 # 只在 /admin 界面上挂出来、规则逻辑还没实现的检查项：
 # 不进 checks.REGISTRY，所以每日检查和手动运行都不会碰它们；状态列显示「待实现」，
 # 不写 rule_settings，等规则定下来再挪进 REGISTRY 并删掉这里的条目。
-PENDING_RULES = [
-    {"rule": "image.zh_in_en", "label": "英文图片包含中文",
-     "group": "image", "langs": ["en"], "severity": "warn"},
-    {"rule": "image.missing", "label": "图片缺失",
-     "group": "image", "langs": ["cn", "en"], "severity": "error"},
-]
+PENDING_RULES: list[dict] = []
 
 
 @app.route("/admin", methods=["GET", "POST"])
@@ -992,7 +987,39 @@ def admin_page():
                "pending_only": all(r.get("pending") for r in buckets[key])}
               for key in RULE_GROUP_ORDER if buckets.get(key)]
     return render_template("admin.html", authed=True, err="", groups=groups,
-                           cache=_cache_stats())
+                           cache=_cache_stats(), ai=_ai_stats(), ai_calls=_ai_calls(0))
+
+
+def _ai_stats() -> dict:
+    """AI 额度 + 累计；AI 未配置/接口挂了都不该把 /admin 打挂。"""
+    try:
+        from ai.usage import usage_summary
+        return usage_summary()
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "stale": False, "error": str(e)[:120], "gauges": [],
+                "local": {"calls": 0, "failed": 0, "tokens_h": "0", "tokens_in_h": "0",
+                          "tokens_out_h": "0", "today_tokens_h": "0", "kinds": {}}}
+
+
+def _ai_calls(page: int) -> dict:
+    """最近调用（分页）。"""
+    try:
+        from ai.usage import calls_total, recent_calls
+        size = 20
+        rows = recent_calls(size, max(0, page) * size)
+        total = calls_total()
+        return {"rows": rows, "total": total, "page": page, "size": size,
+                "pages": max(1, (total + size - 1) // size)}
+    except Exception as e:  # noqa: BLE001
+        return {"rows": [], "total": 0, "page": 0, "size": 20, "pages": 1, "error": str(e)[:120]}
+
+
+@app.get("/api/admin/ai")
+def api_admin_ai():
+    if not is_admin():
+        return jsonify({"ok": False, "error": "未登录"}), 403
+    page = _int_arg("page", 0, 0, 10000)
+    return jsonify({"ok": True, "summary": _ai_stats(), "calls": _ai_calls(page)})
 
 
 def _cache_stats() -> dict:
@@ -1086,7 +1113,7 @@ def _rule_state(rule: str) -> tuple[str, list[str]]:
     on = bool(row["enabled"]) if row else bool(meta.get("default_on", True))
     vis = on and (bool(row["visible"]) if row else
                   bool(meta.get("default_visible", meta.get("default_on", True))))
-    langs = ([x for x in (row["langs"] or "").split(",") if x] if row and row["langs"]
+    langs = ([x.strip() for x in (row["langs"] or "").split(",") if x.strip()] if row and row["langs"]
              else list(meta.get("langs") or ("cn", "en")))
     return ("off" if not on else ("live" if vis else "debug")), langs
 

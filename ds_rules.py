@@ -46,7 +46,7 @@ def ensure(conn: sqlite3.Connection, registry: dict) -> None:
         on = 1 if meta.get("default_on", True) else 0
         # 新规则可以在 checks 里声明 default_visible=False：天生「调试中」，不用手动去后台关
         vis = 1 if meta.get("default_visible", bool(on)) else 0
-        langs = ", ".join(meta.get("langs") or ("cn", "en"))
+        langs = ",".join(meta.get("langs") or ("cn", "en"))
         rows.append((rule, on, vis, langs, time.strftime("%Y-%m-%d %H:%M:%S")))
     if rows:
         conn.executemany("INSERT OR REPLACE INTO rule_settings"
@@ -62,7 +62,9 @@ def all_settings(conn: sqlite3.Connection) -> dict[str, dict]:
                 "SELECT rule, enabled, visible, langs, updated_at FROM rule_settings"):
             out[rule] = {"enabled": bool(enabled),
                          "visible": bool(enabled) and bool(visible),
-                         "langs": [x for x in (langs or "").split(",") if x],
+                         # 「cn, en」这种带空格的写法要 strip：否则 ' en' 匹配不到任何 issue，
+                         # 表现为「规则明明有英文问题，后台计数是 0」（2026-11 image.missing 踩过）
+                         "langs": [x.strip() for x in (langs or "").split(",") if x.strip()],
                          "updated_at": upd}
     except sqlite3.OperationalError:
         return {}

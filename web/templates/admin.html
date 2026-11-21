@@ -54,6 +54,23 @@
   .login button{width:100%;margin-top:12px;padding:9px 0;border:none;border-radius:8px;background:var(--accent);color:#fff;font-size:14px;cursor:pointer}
   .err{color:#d92d20;font-size:12.5px;margin-top:8px}
   /* 页签（检查项 / 数据缓存）*/
+  .aiblk{margin:18px 0 0}
+  .aih{font-size:13px;font-weight:600;color:#1f2430;margin:0 0 10px}
+  .aihint{font-weight:400;color:var(--muted);font-size:12px;margin-left:8px}
+  .aig{display:flex;align-items:center;gap:12px;padding:6px 0;font-size:12.5px}
+  .aig-l{width:76px;color:var(--muted)}
+  .aig-bar{flex:1;height:8px;background:#eef1f5;border-radius:5px;overflow:hidden}
+  .aig-bar i{display:block;height:100%;border-radius:5px}
+  .aig-p{width:54px;text-align:right;font-weight:600}
+  .aig-r{width:96px;color:var(--muted);text-align:right}
+  .ainote{color:var(--muted);font-size:12px;margin-top:8px;line-height:1.75}
+  .aistats{display:flex;gap:12px;flex-wrap:wrap}
+  .aist{flex:1;min-width:120px;border:1px solid var(--border);border-radius:8px;padding:10px 12px}
+  .aist .n{font-size:18px;font-weight:600}
+  .aist .l{font-size:12px;color:var(--muted);margin-top:2px}
+  .aiwrap{overflow-x:auto}
+  .ait td.mono,.ait th{white-space:nowrap}
+  .aipg{display:flex;align-items:center;gap:10px;justify-content:flex-end;margin-top:10px;font-size:12.5px;color:var(--muted)}
   .subtabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:0 0 16px}
   .subtabs button{border:none;background:none;padding:8px 14px;font-size:13.5px;color:var(--muted);
                   cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
@@ -112,6 +129,7 @@
   <div class="subtabs">
     <button class="on" data-tab="rules">检查项</button>
     <button data-tab="cache">数据缓存</button>
+    <button data-tab="ai">AI 能力</button>
   </div>
 
   <div class="pane" id="pane-rules">
@@ -220,6 +238,82 @@
     </div>
   </div>
   </div><!-- /pane-cache -->
+
+  <div class="pane" id="pane-ai" hidden>
+  <div class="card">
+    <div class="cachehd">
+      <h2 style="margin:0">AI 能力</h2>
+      <span class="sum" id="ai-sum">{% if ai and ai.ok %}额度每 60 秒刷新{% else %}暂未取到 AI 额度{% endif %}</span>
+      <span class="sp"></span>
+      <button class="mini" id="ai-refresh">刷新</button>
+    </div>
+
+    <div class="aiblk">
+      <div class="aih">可用余量 <span class="aihint">进度条越满余量越充足</span></div>
+      <div id="ai-gauges">
+      {% if ai and ai.ok %}
+        {% for g in ai.gauges %}
+        <div class="aig">
+          <span class="aig-l">{{ g.label }}</span>
+          <span class="aig-bar"><i style="width:{{ g.remaining }}%;background:{{ g.rem_color }}"></i></span>
+          <span class="aig-p" style="color:{{ g.rem_color }}">{{ g.remaining }}%</span>
+          <span class="aig-r">↻ {{ g.reset }}</span>
+        </div>
+        {% endfor %}
+      {% else %}
+        <div class="muted">AI 能力未配置，或额度接口暂时不可用。</div>
+      {% endif %}
+      </div>
+      <div class="ainote">额度取自 opencode-go 官方接口；已用 = 100% − 剩余{% if ai and ai.stale %}（当前为缓存值）{% endif %}</div>
+    </div>
+
+    <div class="aiblk">
+      <div class="aih">本项目累计 <span class="aihint">只统计真实调用，缓存命中不计</span></div>
+      <div class="aistats" id="ai-stats">
+        <div class="aist"><div class="n">{{ '{:,}'.format(ai.local.calls) if ai else 0 }}</div><div class="l">调用次数</div></div>
+        <div class="aist"><div class="n">{{ ai.local.tokens_h if ai else '—' }}</div><div class="l">Token 合计</div></div>
+        <div class="aist"><div class="n">{{ ai.local.today_tokens_h if ai else '—' }}</div><div class="l">今日 Token</div></div>
+        <div class="aist"><div class="n">{{ '{:,}'.format(ai.local.failed) if ai else 0 }}</div><div class="l">失败次数</div></div>
+      </div>
+      <div class="ainote" id="ai-kinds">输入 <b>{{ ai.local.tokens_in_h if ai else '—' }}</b> · 输出 <b>{{ ai.local.tokens_out_h if ai else '—' }}</b>{% if ai and ai.local.kinds %} ·
+        {% for k, v in ai.local.kinds.items() %}<code>{{ k }}</code> {{ '{:,}'.format(v.calls) }} 次 / {{ '{:,}'.format(v.tokens_in + v.tokens_out) }} tokens{% if not loop.last %}；{% endif %}{% endfor %}{% endif %}
+      </div>
+    </div>
+
+    <div class="aiblk">
+      <div class="aih">最近调用 <span class="aihint">按时间倒序，分页</span></div>
+      <div class="aiwrap">
+      <table class="cache ait">
+        <thead><tr>
+          <th style="width:152px">时间</th><th style="width:130px">规则</th><th>对象</th>
+          <th style="width:168px">模型</th><th class="n" style="width:104px">Tokens</th>
+          <th class="n" style="width:76px">耗时</th><th style="width:86px">结论</th>
+        </tr></thead>
+        <tbody id="ai-body">
+        {% for c in (ai_calls.rows if ai_calls else []) %}
+          <tr>
+            <td class="mono">{{ c.ts }}</td>
+            <td><span class="cname">{{ c.kind }}</span></td>
+            <td class="use" title="{{ c.module }} / {{ c.item_key }}">{{ (c.item_key or '—')[:22] }}</td>
+            <td class="mono">{{ c.model or '—' }}</td>
+            <td class="n">{{ '{:,}'.format((c.tokens_in or 0) + (c.tokens_out or 0)) }}</td>
+            <td class="n">{{ (c.latency_ms or 0) / 1000 }}s</td>
+            <td>{% if not c.ok %}<span class="hot">失败</span>{% else %}{{ c.verdict or '—' }}{% endif %}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="7" class="muted" style="text-align:center;padding:18px">暂无调用记录</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+      </div>
+      <div class="aipg">
+        <button class="mini" id="ai-prev" {% if not ai_calls or ai_calls.page == 0 %}disabled{% endif %}>上一页</button>
+        <span id="ai-pginfo">第 {{ (ai_calls.page + 1) if ai_calls else 1 }} / {{ ai_calls.pages if ai_calls else 1 }} 页 · 共 {{ '{:,}'.format(ai_calls.total) if ai_calls else 0 }} 次</span>
+        <button class="mini" id="ai-next" {% if not ai_calls or ai_calls.page + 1 >= ai_calls.pages %}disabled{% endif %}>下一页</button>
+      </div>
+    </div>
+  </div>
+  </div><!-- /pane-ai -->
 </div>
 
 <div class="toast" id="toast"></div>
@@ -267,13 +361,15 @@ document.querySelectorAll('tr[data-rule]:not(.pend)').forEach(tr=>{
   tr.querySelectorAll('.lg').forEach(c=>c.addEventListener('change', ()=>saveRule(tr, tr.dataset.state)));
 });
 
-/* ── 页签：检查项 / 数据缓存 ── */
+/* ── 页签：检查项 / 数据缓存 / AI 能力 ── */
 const tabBtns = [...document.querySelectorAll('.subtabs button')];
-const panes = { rules: document.getElementById('pane-rules'), cache: document.getElementById('pane-cache') };
+const panes = { rules: document.getElementById('pane-rules'), cache: document.getElementById('pane-cache'),
+                ai: document.getElementById('pane-ai') };
 function showTab(name){
   tabBtns.forEach(b => b.classList.toggle('on', b.dataset.tab === name));
   Object.entries(panes).forEach(([k, el]) => { if (el) el.hidden = (k !== name); });
   if (name === 'cache') { history.replaceState(null, '', '#cache'); loadCache(); }
+  else if (name === 'ai') { history.replaceState(null, '', '#ai'); loadAi(0); }
   else history.replaceState(null, '', location.pathname + location.search);
 }
 tabBtns.forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
@@ -342,9 +438,67 @@ function wireRecheck(){
     else { toast('失败：' + (d.error || r.status)); b.disabled = false; b.textContent = label; }
   });
 }
+/* ── AI 能力：额度 / 累计 / 最近调用 ── */
+let aiPage = 0;
+const fmtN = n => (n || 0).toLocaleString();
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+function renderAi(d){
+  const sum = d.summary || {}, calls = d.calls || {};
+  aiPage = calls.page || 0;
+  const g = document.getElementById('ai-gauges');
+  if (sum.ok && (sum.gauges || []).length) {
+    g.innerHTML = sum.gauges.map(x => `
+      <div class="aig">
+        <span class="aig-l">${esc(x.label)}</span>
+        <span class="aig-bar"><i style="width:${x.remaining}%;background:${x.rem_color}"></i></span>
+        <span class="aig-p" style="color:${x.rem_color}">${x.remaining}%</span>
+        <span class="aig-r">↻ ${esc(x.reset)}</span>
+      </div>`).join('');
+    document.getElementById('ai-sum').textContent = sum.stale ? '额度为缓存值' : '额度每 60 秒刷新';
+  } else {
+    g.innerHTML = '<div class="muted">AI 能力未配置，或额度接口暂时不可用。</div>';
+    document.getElementById('ai-sum').textContent = '暂未取到 AI 额度';
+  }
+  const L = sum.local || {};
+  document.getElementById('ai-stats').innerHTML = [
+    ['调用次数', fmtN(L.calls)], ['Token 合计', L.tokens_h || '—'],
+    ['今日 Token', L.today_tokens_h || '—'], ['失败次数', fmtN(L.failed)]
+  ].map(([l, n]) => `<div class="aist"><div class="n">${esc(n)}</div><div class="l">${l}</div></div>`).join('');
+  const kinds = Object.entries(L.kinds || {}).map(([k, v]) =>
+    `<code>${esc(k)}</code> ${fmtN(v.calls)} 次 / ${fmtN(v.tokens_in + v.tokens_out)} tokens`).join('；');
+  document.getElementById('ai-kinds').innerHTML =
+    `输入 <b>${esc(L.tokens_in_h || '—')}</b> · 输出 <b>${esc(L.tokens_out_h || '—')}</b>` + (kinds ? ` · ${kinds}` : '');
+  const rows = calls.rows || [];
+  document.getElementById('ai-body').innerHTML = rows.length ? rows.map(c => `
+    <tr>
+      <td class="mono">${esc(c.ts)}</td>
+      <td><span class="cname">${esc(c.kind)}</span></td>
+      <td class="use" title="${esc((c.module || '') + ' / ' + (c.item_key || ''))}">${esc((c.item_key || '—').slice(0, 22))}</td>
+      <td class="mono">${esc(c.model || '—')}</td>
+      <td class="n">${fmtN((c.tokens_in || 0) + (c.tokens_out || 0))}</td>
+      <td class="n">${((c.latency_ms || 0) / 1000).toFixed(1)}s</td>
+      <td>${c.ok ? esc(c.verdict || '—') : '<span class="hot">失败</span>'}</td>
+    </tr>`).join('')
+    : '<tr><td colspan="7" class="muted" style="text-align:center;padding:18px">暂无调用记录</td></tr>';
+  document.getElementById('ai-pginfo').textContent =
+    `第 ${(calls.page || 0) + 1} / ${calls.pages || 1} 页 · 共 ${fmtN(calls.total)} 次`;
+  document.getElementById('ai-prev').disabled = !calls.page;
+  document.getElementById('ai-next').disabled = (calls.page + 1) >= (calls.pages || 1);
+}
+async function loadAi(page){
+  try {
+    const r = await fetch('/api/admin/ai?page=' + (page || 0), { cache: 'no-store' });
+    const d = await r.json();
+    if (d.ok) renderAi(d); else toast('读取失败：' + (d.error || r.status));
+  } catch (e) { toast('读取失败：' + e.message); }
+}
+document.getElementById('ai-refresh').onclick = () => loadAi(aiPage);
+document.getElementById('ai-prev').onclick = () => loadAi(Math.max(0, aiPage - 1));
+document.getElementById('ai-next').onclick = () => loadAi(aiPage + 1);
 document.getElementById('cache-refresh').onclick = loadCache;
 wireRecheck();
 if (location.hash === '#cache') showTab('cache');
+if (location.hash === '#ai') showTab('ai');
 </script>
 {% endif %}
 </body>

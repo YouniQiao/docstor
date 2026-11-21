@@ -22,3 +22,5 @@ venv/
 .ai.env
 .admin.env
 data/.catalog_index_at
+.ai_usage_cache.json
+.ai_usage_cache.json.tmp
