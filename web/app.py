@@ -172,6 +172,11 @@ gcauth.init_app(app)
 _db = ds_db.DB(str(DB_PATH))
 ds_rules.ensure(_db.conn, checks.REGISTRY)
 usermgr.ensure_schema(_db.conn)
+try:                                  # AI 三张表（含 ai_usage_log.actor 补列）
+    from ai.cache import ensure_schema as _ai_ensure
+    _ai_ensure()
+except Exception as _e:  # noqa: BLE001
+    app.logger.warning("AI 表初始化失败: %s", _e)
 try:                                  # 别名表只在缺失文档时才用到，起不来也不影响主站
     ds_alias.build(_db.conn)
 except Exception:  # noqa: BLE001
@@ -518,7 +523,10 @@ def api_issue_suggest(iid: int):
     }
     try:
         import ai
-        res = ai.review("fix_suggestion", fields, module="issue", item_key=row["fprint"])
+        actor = (gcauth.login_name() if gcauth.current_user() else "") or \
+                ("后台（管理员）" if is_admin() else "")
+        res = ai.review("fix_suggestion", fields, module="issue", item_key=row["fprint"],
+                        actor=actor)
     except Exception as e:  # noqa: BLE001
         return jsonify({"ok": False, "error": f"AI 暂不可用：{str(e)[:120]}"}), 503
     return jsonify({"ok": True, "advice": res.get("advice") or res.get("reason") or "",

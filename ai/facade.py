@@ -53,7 +53,7 @@ def _img_part(path: str) -> dict:
 
 def review(rubric: str, fields: dict, images: list[str] | None = None, *,
            module: str = "", item_key: str = "", tier: str = "fast",
-           use_cache: bool = True, max_tokens: int = 2000) -> dict:
+           use_cache: bool = True, max_tokens: int = 2000, actor: str = "") -> dict:
     """按 rubric 做一次结构化判定。返回 verdict/confidence/reason/suggestion + _meta。"""
     spec = PROMPTS.get(rubric)
     if not spec:
@@ -97,7 +97,7 @@ def review(rubric: str, fields: dict, images: list[str] | None = None, *,
         raw, usage = chat_json(msgs, model, max_tokens=max_tokens)
     except AIError as ex:
         log_usage(rubric, module, item_key, model, 0, 0,
-                  int((time.time() - t0) * 1000), ok=False, error=str(ex))
+                  int((time.time() - t0) * 1000), ok=False, error=str(ex), actor=actor)
         raise
     out = {"verdict": raw.get("verdict", "uncertain"),
            "confidence": raw.get("confidence"),
@@ -114,7 +114,7 @@ def review(rubric: str, fields: dict, images: list[str] | None = None, *,
     if use_cache:
         cache_put(key, rubric, model, pver, item_hash(payload), out, usage)
     log_usage(rubric, module, item_key, model, tin, tout,
-              int((time.time() - t0) * 1000), ok=True)
+              int((time.time() - t0) * 1000), ok=True, actor=actor)
     if module and item_key:
         note_put(module, item_key, rubric, out, model, pver)
     out["_meta"] = {"cached": False, "model": model, "prompt_version": pver, "tokens": tout}

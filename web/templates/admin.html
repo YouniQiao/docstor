@@ -297,6 +297,7 @@
         <div class="aist"><div class="n">{{ ai.local.today_tokens_h if ai else '—' }}</div><div class="l">今日 Token</div></div>
         <div class="aist"><div class="n">{{ '{:,}'.format(ai.local.failed) if ai else 0 }}</div><div class="l">失败次数</div></div>
       </div>
+      <div class="ainote" id="ai-actors"></div>
       <div class="ainote" id="ai-kinds">输入 <b>{{ ai.local.tokens_in_h if ai else '—' }}</b> · 输出 <b>{{ ai.local.tokens_out_h if ai else '—' }}</b>{% if ai and ai.local.kinds %} ·
         {% for k, v in ai.local.kinds.items() %}<code>{{ k }}</code> {{ '{:,}'.format(v.calls) }} 次 / {{ '{:,}'.format(v.tokens_in + v.tokens_out) }} tokens{% if not loop.last %}；{% endif %}{% endfor %}{% endif %}
       </div>
@@ -308,6 +309,7 @@
       <table class="cache ait">
         <thead><tr>
           <th style="width:152px">时间</th><th style="width:130px">规则</th><th>对象</th>
+          <th style="width:110px">调用人</th>
           <th style="width:168px">模型</th><th class="n" style="width:104px">Tokens</th>
           <th class="n" style="width:76px">耗时</th><th style="width:86px">结论</th>
         </tr></thead>
@@ -317,13 +319,14 @@
             <td class="mono">{{ c.ts }}</td>
             <td><span class="cname">{{ c.kind }}</span></td>
             <td class="use" title="{{ c.module }} / {{ c.item_key }}">{{ (c.item_key or '—')[:22] }}</td>
+            <td>{% if c.actor %}{{ c.actor }}{% else %}<span class="muted">系统脚本</span>{% endif %}</td>
             <td class="mono">{{ c.model or '—' }}</td>
             <td class="n">{{ '{:,}'.format((c.tokens_in or 0) + (c.tokens_out or 0)) }}</td>
             <td class="n">{{ (c.latency_ms or 0) / 1000 }}s</td>
-            <td>{% if not c.ok %}<span class="hot">失败</span>{% else %}{{ c.verdict or '—' }}{% endif %}</td>
+            <td>{% if not c.ok %}<span class="hot">失败</span>{% elif c.kind == 'fix_suggestion' %}<span class="muted">—</span>{% else %}{{ c.verdict or '—' }}{% endif %}</td>
           </tr>
         {% else %}
-          <tr><td colspan="7" class="muted" style="text-align:center;padding:18px">暂无调用记录</td></tr>
+          <tr><td colspan="8" class="muted" style="text-align:center;padding:18px">暂无调用记录</td></tr>
         {% endfor %}
         </tbody>
       </table>
@@ -764,6 +767,8 @@ function renderAi(d){
   ].map(([l, n]) => `<div class="aist"><div class="n">${esc(n)}</div><div class="l">${l}</div></div>`).join('');
   const kinds = Object.entries(L.kinds || {}).map(([k, v]) =>
     `<code>${esc(k)}</code> ${fmtN(v.calls)} 次 / ${fmtN(v.tokens_in + v.tokens_out)} tokens`).join('；');
+  const acts = (L.actors || []).map(a => `<b>${esc(a.actor)}</b> ${fmtN(a.calls)} 次 / ${fmtN(a.tokens)} tokens`).join('；');
+  document.getElementById('ai-actors').innerHTML = acts ? `按调用人：${acts}` : '';
   document.getElementById('ai-kinds').innerHTML =
     `输入 <b>${esc(L.tokens_in_h || '—')}</b> · 输出 <b>${esc(L.tokens_out_h || '—')}</b>` + (kinds ? ` · ${kinds}` : '');
   const rows = calls.rows || [];
@@ -772,12 +777,13 @@ function renderAi(d){
       <td class="mono">${esc(c.ts)}</td>
       <td><span class="cname">${esc(c.kind)}</span></td>
       <td class="use" title="${esc((c.module || '') + ' / ' + (c.item_key || ''))}">${esc((c.item_key || '—').slice(0, 22))}</td>
+      <td>${c.actor ? esc(c.actor) : '<span class="muted">系统脚本</span>'}</td>
       <td class="mono">${esc(c.model || '—')}</td>
       <td class="n">${fmtN((c.tokens_in || 0) + (c.tokens_out || 0))}</td>
       <td class="n">${((c.latency_ms || 0) / 1000).toFixed(1)}s</td>
-      <td>${c.ok ? esc(c.verdict || '—') : '<span class="hot">失败</span>'}</td>
+      <td>${c.ok ? (c.kind === 'fix_suggestion' ? '<span class="muted">—</span>' : esc(c.verdict || '—')) : '<span class="hot">失败</span>'}</td>
     </tr>`).join('')
-    : '<tr><td colspan="7" class="muted" style="text-align:center;padding:18px">暂无调用记录</td></tr>';
+    : '<tr><td colspan="8" class="muted" style="text-align:center;padding:18px">暂无调用记录</td></tr>';
   document.getElementById('ai-pginfo').textContent =
     `第 ${(calls.page || 0) + 1} / ${calls.pages || 1} 页 · 共 ${fmtN(calls.total)} 次`;
   document.getElementById('ai-prev').disabled = !calls.page;

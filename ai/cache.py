@@ -54,7 +54,8 @@ CREATE TABLE IF NOT EXISTS ai_usage_log (
   latency_ms INTEGER,
   cached INTEGER DEFAULT 0,
   ok INTEGER DEFAULT 1,
-  error TEXT
+  error TEXT,
+  actor TEXT
 );
 CREATE INDEX IF NOT EXISTS ix_ai_usage_ts ON ai_usage_log(ts);
 """
@@ -80,6 +81,9 @@ def ensure_schema() -> None:
     try:
         with c:
             c.executescript(_SCHEMA)
+            cols = {r[1] for r in c.execute("PRAGMA table_info(ai_usage_log)")}
+            if "actor" not in cols:            # 老库补列：谁触发的调用
+                c.execute("ALTER TABLE ai_usage_log ADD COLUMN actor TEXT")
     finally:
         c.close()
 
@@ -124,11 +128,12 @@ def cache_put(key: str, kind: str, model: str, pver: str, ihash: str,
 
 
 def log_usage(kind: str, module: str, item_key: str, model: str, tokens_in: int,
-              tokens_out: int, latency_ms: int, ok: bool = True, error: str = "") -> None:
+              tokens_out: int, latency_ms: int, ok: bool = True, error: str = "",
+              actor: str = "") -> None:
     _write("INSERT INTO ai_usage_log(ts,kind,module,item_key,model,tokens_in,tokens_out,"
-           "latency_ms,cached,ok,error) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+           "latency_ms,cached,ok,error,actor) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
            (_now(), kind, module, item_key, model, tokens_in, tokens_out,
-            latency_ms, 0, 1 if ok else 0, error[:300]))
+            latency_ms, 0, 1 if ok else 0, error[:300], (actor or "")[:60]))
 
 
 def note_put(module: str, item_key: str, kind: str, data: dict, model: str, pver: str) -> None:

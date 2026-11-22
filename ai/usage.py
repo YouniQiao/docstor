@@ -76,13 +76,24 @@ def local_usage() -> dict:
             "tokens": tin + tout, "tokens_h": _fmt_tokens(tin + tout),
             "tokens_in_h": _fmt_tokens(tin), "tokens_out_h": _fmt_tokens(tout),
             "today_tokens": tokens_today(), "today_tokens_h": _fmt_tokens(tokens_today()),
-            "kinds": s}
+            "kinds": s, "actors": actors()}
+
+
+def actors(limit: int = 8) -> list[dict]:
+    """按调用人汇总（谁点出来的），空 actor 归到「系统脚本」。"""
+    try:
+        rows = _query("SELECT COALESCE(NULLIF(TRIM(actor),''),'系统脚本') a, COUNT(*) n, "
+                      "SUM(tokens_in+tokens_out) t FROM ai_usage_log "
+                      "GROUP BY a ORDER BY n DESC LIMIT ?", (limit,))
+        return [{"actor": r[0], "calls": int(r[1] or 0), "tokens": int(r[2] or 0)} for r in rows]
+    except Exception:  # noqa: BLE001
+        return []
 
 
 def recent_calls(limit: int = 20, offset: int = 0) -> list[dict]:
     rows = _query(
         "SELECT u.id, u.ts, u.kind, u.module, u.item_key, u.model, u.tokens_in, u.tokens_out, "
-        "       u.latency_ms, u.ok, u.error, n.verdict, n.confidence "
+        "       u.latency_ms, u.ok, u.error, u.actor, n.verdict, n.confidence "
         "FROM ai_usage_log u "
         "LEFT JOIN ai_notes n ON n.module=u.module AND n.item_key=u.item_key AND n.kind=u.kind "
         "ORDER BY u.id DESC LIMIT ? OFFSET ?", (limit, offset))
