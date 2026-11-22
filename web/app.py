@@ -1066,9 +1066,10 @@ def api_tree():
 
 # ---------------- 全量问题页 ----------------
 # 检查项分类：规则前缀 → 页面上的分组名（顺序即展示顺序；没有规则的分组不显示）
-RULE_GROUP_NAMES = {"link": "链接检查", "special": "专项检查",
+RULE_GROUP_NAMES = {"special": "专项检查", "link": "链接检查",
                    "image": "图片检查", "text": "文本检查"}
-RULE_GROUP_ORDER = ["link", "special", "image", "text"]
+# 顺序即 /admin「检查项」页签里的分组展示顺序（专项检查在前）
+RULE_GROUP_ORDER = ["special", "link", "image", "text"]
 
 # 只在 /admin 界面上挂出来、规则逻辑还没实现的检查项：
 # 不进 checks.REGISTRY，所以每日检查和手动运行都不会碰它们；状态列显示「待实现」，
