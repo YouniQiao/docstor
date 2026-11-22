@@ -52,6 +52,11 @@
     header.tnav .tabs a{padding:0 9px;font-size:13px}
     header.tnav .usr>a{padding:6px 8px}
   }
+  @media(max-width:430px){
+    /* 四个页签在小屏要挤进一行，不然「站点动态」会滑到屏外 */
+    header.tnav{padding:0 6px;gap:4px}
+    header.tnav .tabs a{padding:0 6px;font-size:12.5px}
+  }
 </style>
 <header class="tnav">
   <a class="brand" href="/">docstor</a>
@@ -60,6 +65,7 @@
     <a href="/" class="{{ 'on' if request.path == '/' else '' }}">文档站</a>
     <a href="/issues" class="{{ 'on' if request.path == '/issues' else '' }}">全量问题</a>
     <a href="/sync" class="{{ 'on' if request.path == '/sync' else '' }}">每日变更记录</a>
+    <a href="/changelog" class="{{ 'on' if request.path == '/changelog' else '' }}">站点动态</a>
   </div>
   <span class="sp"></span>
   <div class="usr" id="tnav-usr"></div>

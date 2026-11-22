@@ -1406,6 +1406,36 @@ def admin_rule_log(rule: str):
             "white-space:pre-wrap\">" + tail.replace("&", "&amp;").replace("<", "&lt;") + "</pre>")
 
 
+@app.get("/changelog")
+def changelog_page():
+    """站点动态：规则/功能变更时间线 + AI 可用量（公开）。"""
+    import changelog as cl
+    cls = {"新增规则": "rule", "规则调整": "tune", "新增功能": "feat",
+           "修复": "fix", "安全": "sec", "站点": "site"}
+    entries = [{**e, "cls": cls.get(e.get("kind"), "fix")} for e in cl.ENTRIES]
+    return render_template("changelog.html", entries=entries)
+
+
+@app.get("/api/ai/status")
+def api_ai_status():
+    """给「站点动态」页用的公开额度视图：只给剩余百分比与累计数，不给调用明细。"""
+    try:
+        import ai
+        s = ai.usage_summary()
+        loc = s.get("local") or {}
+        return jsonify({"ok": bool(s.get("gauges")),
+                        "error": s.get("error") or "",
+                        "gauges": [{k: g.get(k) for k in
+                                    ("label", "remaining", "rem_color", "reset")}
+                                   for g in (s.get("gauges") or [])],
+                        "today_tokens": loc.get("today_tokens"),
+                        "today_tokens_h": loc.get("today_tokens_h"),
+                        "calls": loc.get("calls"), "tokens": loc.get("tokens"),
+                        "tokens_h": loc.get("tokens_h")})
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"额度读取失败：{str(e)[:80]}"}), 200
+
+
 @app.get("/issues")
 def issues_page():
     return render_template("issues.html",

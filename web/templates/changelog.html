@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>站点动态 · docstor</title>
+<style>
+  :root{--fg:#1f2430;--muted:#7b8494;--border:#e4e7ec;--bg:#f7f8fa;--blue:#2a6df4}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif}
+  a{color:var(--blue);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .wrap{max-width:1124px;margin:0 auto;padding:22px 20px 60px}
+  h1{font-size:20px;margin:0 0 4px}
+  .sub{color:var(--muted);font-size:13px;margin-bottom:18px}
+  .card{background:#fff;border:1px solid var(--border);border-radius:12px}
+
+  /* AI 可用量 */
+  .ai{padding:16px 18px;margin-bottom:20px}
+  .ai .hd{display:flex;align-items:baseline;gap:10px;margin-bottom:12px}
+  .ai .hd b{font-size:14px}
+  .ai .hd span{color:var(--muted);font-size:12.5px}
+  .gauges{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  .g .top{display:flex;justify-content:space-between;font-size:12.5px;color:var(--muted);margin-bottom:5px}
+  .g .top b{color:var(--fg);font-size:13px;font-weight:600}
+  .g .bar{height:7px;background:#eef1f6;border-radius:4px;overflow:hidden}
+  .g .bar i{display:block;height:100%;border-radius:4px;background:#128c4a;transition:width .4s}
+  .g .rst{font-size:11.5px;color:#9aa3b2;margin-top:4px;height:15px}
+  .nums{display:flex;gap:26px;margin-top:14px;padding-top:12px;border-top:1px dashed var(--border);font-size:12.5px;color:var(--muted)}
+  .nums b{color:var(--fg);font-size:14px;font-weight:600;margin-right:3px}
+
+  /* 时间线 */
+  .line{padding:8px 0 4px}
+  .item{position:relative;padding:0 0 20px 26px;border-left:2px solid #e8ebf1;margin-left:8px}
+  .item:last-child{border-left-color:transparent;padding-bottom:4px}
+  .item:before{content:"";position:absolute;left:-6px;top:7px;width:10px;height:10px;border-radius:50%;
+    background:#fff;border:2px solid #c9d2e0}
+  .item.new:before{border-color:var(--blue)}
+  .date{font-size:12px;color:var(--muted);letter-spacing:.3px}
+  .ttl{font-size:14.5px;font-weight:600;margin:3px 0 4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .tag{font-size:11px;font-weight:500;padding:1px 7px;border-radius:999px;border:1px solid transparent;white-space:nowrap}
+  .tag.rule{background:#eaf1ff;color:#2259c9;border-color:#d6e3ff}
+  .tag.tune{background:#fdf1e3;color:#a35a06;border-color:#f7e2c8}
+  .tag.feat{background:#e8f7ee;color:#127347;border-color:#d2eedd}
+  .tag.fix{background:#f2f2f6;color:#5b6472;border-color:#e6e7ef}
+  .tag.sec{background:#fdeaea;color:#b3261e;border-color:#f8d7d5}
+  .tag.site{background:#f2f0fd;color:#5b46c9;border-color:#e2dcfa}
+  .desc{font-size:13.2px;color:#4a5262}
+  .go{margin-left:6px;font-size:12.5px;white-space:nowrap}
+  @media(max-width:760px){
+    .wrap{padding:16px 12px 50px}
+    .gauges{grid-template-columns:1fr;gap:12px}
+    .nums{flex-wrap:wrap;gap:14px}
+    .item{padding-left:20px;margin-left:6px}
+  }
+</style>
+</head>
+<body>
+{% include "_nav.html" %}
+<div class="wrap">
+  <h1>站点动态</h1>
+  <div class="sub">这里记的是<b>我们这边</b>改了什么：新增/调整了哪条检查规则、上了哪个功能、修了哪个问题。
+    官网文档自身的变化请看 <a href="/sync">每日变更记录</a>。</div>
+
+  <div class="card ai">
+    <div class="hd"><b>AI 可用量</b><span id="ai-hint">读取中…</span></div>
+    <div class="gauges" id="ai-gauges">
+      <div class="g"><div class="top"><span>滚动窗口</span><b>—</b></div><div class="bar"><i style="width:0"></i></div><div class="rst"></div></div>
+      <div class="g"><div class="top"><span>本周</span><b>—</b></div><div class="bar"><i style="width:0"></i></div><div class="rst"></div></div>
+      <div class="g"><div class="top"><span>本月</span><b>—</b></div><div class="bar"><i style="width:0"></i></div><div class="rst"></div></div>
+    </div>
+    <div class="nums" id="ai-nums"></div>
+  </div>
+
+  <div class="card line">
+    <div style="padding:14px 18px 4px;font-size:13px;color:var(--muted)">共 {{ entries|length }} 条记录</div>
+    <div style="padding:8px 18px 14px">
+    {% for e in entries %}
+      <div class="item {{ 'new' if loop.index0 < 2 else '' }}">
+        <div class="date">{{ e.date }}</div>
+        <div class="ttl">
+          <span class="tag {{ e.cls }}">{{ e.kind }}</span>
+          {{ e.title }}
+        </div>
+        <div class="desc">{{ e.detail }}{% if e.rule %}<a class="go" href="/issues?rule={{ e.rule }}">看这类问题 →</a>{% endif %}</div>
+      </div>
+    {% endfor %}
+    </div>
+  </div>
+</div>
+<script>
+(async () => {
+  const hint = document.getElementById('ai-hint');
+  const box = document.getElementById('ai-gauges');
+  const nums = document.getElementById('ai-nums');
+  const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
+    c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+  const fmtN = n => (n == null ? '—' : Number(n).toLocaleString('en-US'));
+  try {
+    const d = await (await fetch('/api/ai/status')).json();
+    if (!d.ok) { hint.textContent = d.error || '额度暂时读不到（不影响使用）'; }
+    else {
+      const labels = ['滚动窗口', '本周', '本月'];
+      box.innerHTML = labels.map((lb, i) => {
+        const g = (d.gauges || [])[i];
+        if (!g) return `<div class="g"><div class="top"><span>${lb}</span><b>—</b></div><div class="bar"><i style="width:0"></i></div><div class="rst"></div></div>`;
+        return `<div class="g">
+          <div class="top"><span>${esc(g.label || lb)}</span><b style="color:${esc(g.rem_color || '#128c4a')}">剩 ${g.remaining}%</b></div>
+          <div class="bar"><i style="width:${Math.max(0, Math.min(100, g.remaining))}%;background:${esc(g.rem_color || '#128c4a')}"></i></div>
+          <div class="rst">${g.reset ? esc(g.reset) : ''}</div></div>`;
+      }).join('');
+      hint.textContent = '共享额度，用完为止；只统计本项目的调用';
+      const rows = [
+        ['今日已用', (d.today_tokens_h || fmtN(d.today_tokens)) + ' tokens'],
+        ['累计调用', fmtN(d.calls) + ' 次'],
+        ['累计 Token', d.tokens_h || fmtN(d.tokens)]
+      ];
+      nums.innerHTML = rows.map(([k, v]) => `<div>${k} <b>${esc(v)}</b></div>`).join('');
+    }
+  } catch (e) {
+    hint.textContent = '额度暂时读不到（不影响使用）';
+  }
+})();
+</script>
+</body>
+</html>
