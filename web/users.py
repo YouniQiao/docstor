@@ -121,7 +121,8 @@ def list_users(conn: sqlite3.Connection, q: str = "", page: int = 0, size: int =
         u["ignores"] = r["n"]
         u["last_ignore"] = r["last_"] or ""
 
-    rows = list(logins.values())
+    # 以 __ 开头的是内部探针（如早期发信测试的 __probe__），不算用户
+    rows = [u for u in logins.values() if not u["login"].startswith("__")]
     if q:
         ql = q.strip().lower()
         rows = [u for u in rows
