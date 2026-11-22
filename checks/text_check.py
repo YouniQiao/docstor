@@ -296,32 +296,33 @@ def dup_key(pattern: str, context: str, source: str) -> str:
 
 RULE_DUP = "text.dup_char"
 NOTE_KIND_DUP = "dup_char_review"
-_REAL: set[str] | None = None
-_REAL_KEY = ""
 
 
-def _real_notes(ctx) -> set[str]:
-    """AI 判为「真重复」的候选键集合。每进程只读一次（结论由 scripts/text_ai_review.py 落库）。"""
-    global _REAL, _REAL_KEY
+_REAL_CACHE: dict[tuple[str, str], set[str]] = {}
+
+
+def _real_notes(ctx, kind: str = NOTE_KIND_DUP) -> set[str]:
+    """AI 判为 real 的候选键集合。每进程每种 kind 只读一次（结论由 scripts/text_ai_review.py 落库）。"""
     db_path = ""
     try:
         db_path = str(Path(ctx.db.conn.execute("PRAGMA database_list").fetchone()[2]).resolve())
     except Exception:  # noqa: BLE001
-        db_path = ""
-    if _REAL is not None and _REAL_KEY == db_path:
-        return _REAL
+        db_path = str(getattr(ctx.db, "path", "") or "")
+    ck = (db_path, kind)
+    if ck in _REAL_CACHE:
+        return _REAL_CACHE[ck]
     s: set[str] = set()
     try:
         conn = sqlite3.connect(db_path or ctx.db.path, timeout=20)
         try:
             for (k,) in conn.execute("SELECT item_key FROM ai_notes WHERE kind=? AND verdict='real'",
-                                     (NOTE_KIND_DUP,)):
+                                     (kind,)):
                 s.add(k)
         finally:
             conn.close()
     except Exception:  # noqa: BLE001
         s = set()
-    _REAL, _REAL_KEY = s, db_path
+    _REAL_CACHE[ck] = s
     return s
 
 
@@ -365,20 +366,80 @@ def check_dup_char(doc, ctx):
     return out
 
 
+RULE_ZH = "text.zh_in_en"
+NOTE_KIND_ZH = "zh_in_en_review"
+# 链接地址不算文字：`[文档](https://…/zh/…)` 只保留链接文字
+LINK_ADDR = re.compile(r"\]\([^)]*\)")
+
+MIN_HAN = 2          # 一行至少 2 个汉字就算候选（「Error code changed兼容」这种 2 字残留也要抓）
+# 英文正文动辄一两百字符，中文残留往往只有「兼容」两个字（占比 <1%），
+# 用占比门槛会漏掉；好在英文语料极干净（全站去掉代码与链接地址后只剩十几行含汉字），
+# 直接不限占比、全部交 AI 判，反而更准也更便宜。
+MIN_RATIO = 0.0
+
+
+def find_zh_candidates(text: str, min_han: int = MIN_HAN, min_ratio: float = MIN_RATIO):
+    """英文文档里的中文候选：正文 + 代码注释，字符串字面量不参与。
+
+    返回 [{source,line,text,han,ratio}]。统计的是「这一行里汉字有多少、占比多少」，
+    阈值与截图那条（image.zh_in_en）保持一致，判据统一。
+    """
+    out = []
+    for source, line_no, line in iter_corpus(text):
+        s = line.strip()
+        if not s:
+            continue
+        t = LINK_ADDR.sub("]", s)          # 去掉链接地址，只留链接文字
+        han = len(HAN.findall(t))
+        if han < min_han:
+            continue
+        visible = sum(1 for ch in t if not ch.isspace())
+        ratio = han / visible if visible else 0.0
+        if ratio < min_ratio:
+            continue
+        out.append({"source": source, "line": line_no, "text": s[:200],
+                    "han": han, "ratio": round(ratio, 3)})
+    return out
+
+
+def zh_key(text: str, source: str) -> str:
+    """AI 结论的键：同一行同一来源稳定；改写后重新判。"""
+    import hashlib
+    raw = f"{source}|{text}".encode()
+    return "zh:" + hashlib.sha1(raw).hexdigest()[:20]
+
+
 @register("text.zh_in_en", label="英文正文含中文", severity="warn", langs=("en",),
           default_visible=False,
           ai_hint="英文文档里混入中文。要改的是把中文译成英文（不是删掉）；"
                   "中文示例数据、语言/地区代码、品牌并列中英对照属于合法用法，不算问题。"
                   "代码块里的中文**注释**算问题，字符串里的中文示例不算。")
 def check_zh_in_en(doc, ctx):
-    """英文文档里的中文（骨架，未实现）。
+    """英文文档里的中文：正文 + 代码注释，AI 判为 real 才报，一篇文档一条。
 
-    语料：正文 + 代码注释；**不含字符串字面量**（示例数据里的中文多半是有意的）。
+    为什么不按行报：一篇英文文档里如果混了整段中文，同事要的是「这篇有问题、这些行」，
+    而不是十几条几乎一样的行级问题。
 
-    计划：
-      1) 统计每行汉字数与可见字符数，候选条件：汉字数 ≥ 3 且占比 ≥ 2%（与图片侧同口径）；
-      2) 代码块只走 code_comment_lines()，字符串里的中文不参与判断；
-      3) 排除白名单：中英对照括号内容、zh/cn 语言代码、表格里的中文列；
-      4) 与 image.zh_in_en 互不覆盖：那条查截图，这条查正文与注释。
+    与 image.zh_in_en 的分工：那条查**截图里的中文**，这条查**正文与代码注释里的中文**，
+    同一篇文档两条都可能命中，这是两个不同的载体，不算重复。
     """
-    return []
+    if (doc.get("lang") or "") != "en":
+        return []
+    text = ctx.text
+    if not text:
+        return []
+    cands = find_zh_candidates(text)
+    if not cands:
+        return []
+    real = _real_notes(ctx, NOTE_KIND_ZH)
+    hits = [h for h in cands if zh_key(h["text"], h["source"]) in real]
+    if not hits:
+        return []
+    hits.sort(key=lambda x: x["line"])
+    return [Issue(
+        rule=RULE_ZH,
+        message="英文文档里出现中文（正文或代码注释）",
+        severity="warn",
+        locator={"line": hits[0]["line"], "lines": [h["line"] for h in hits][:20]},
+        evidence={"hits": hits[:20], "total": len(hits)},
+    )]
