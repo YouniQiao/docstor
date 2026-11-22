@@ -36,7 +36,6 @@
   .item:last-child{border-left-color:transparent;padding-bottom:4px}
   .item:before{content:"";position:absolute;left:-6px;top:7px;width:10px;height:10px;border-radius:50%;
     background:#fff;border:2px solid #c9d2e0}
-  .item.new:before{border-color:var(--blue)}
   .date{font-size:12px;color:var(--muted);letter-spacing:.3px}
   .ttl{font-size:14.5px;font-weight:600;margin:3px 0 4px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
   .tag{font-size:11px;font-weight:500;padding:1px 7px;border-radius:999px;border:1px solid transparent;white-space:nowrap}
@@ -77,7 +76,7 @@
     <div style="padding:14px 18px 4px;font-size:13px;color:var(--muted)">共 {{ entries|length }} 条记录</div>
     <div style="padding:8px 18px 14px">
     {% for e in entries %}
-      <div class="item {{ 'new' if loop.index0 < 2 else '' }}">
+      <div class="item">
         <div class="date">{{ e.date }}</div>
         <div class="ttl">
           <span class="tag {{ e.cls }}">{{ e.kind }}</span>
@@ -108,7 +107,7 @@
         return `<div class="g">
           <div class="top"><span>${esc(g.label || lb)}</span><b style="color:${esc(g.rem_color || '#128c4a')}">剩 ${g.remaining}%</b></div>
           <div class="bar"><i style="width:${Math.max(0, Math.min(100, g.remaining))}%;background:${esc(g.rem_color || '#128c4a')}"></i></div>
-          <div class="rst">${g.reset ? esc(g.reset) : ''}</div></div>`;
+          <div class="rst">${g.reset ? '重置 ' + esc(g.reset) : ''}</div></div>`;
       }).join('');
       hint.textContent = '共享额度，用完为止；只统计本项目的调用';
       const rows = [
