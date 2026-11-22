@@ -1,5 +1,26 @@
 {# 统一顶栏：文档站 / 全量问题 / 每日变更记录 + 右侧用户区
    三个页面共用，当前页由 request.path 高亮，用户态走 /api/me。 #}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<script>
+/* 同站 fetch 写请求自动带一次性令牌：别的站点、外部脚本拿不到这个令牌，调用一律被拒 */
+(function () {
+  var t = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+  if (!t) return;
+  var orig = window.fetch;
+  window.fetch = function (input, init) {
+    init = init || {};
+    var url = (typeof input === 'string') ? input : ((input && input.url) || '');
+    var same = !/^https?:/i.test(url) || url.indexOf(location.origin) === 0;
+    var method = String(init.method || (input && input.method) || 'GET').toUpperCase();
+    if (same && method !== 'GET' && method !== 'HEAD' && method !== 'OPTIONS') {
+      var h = new Headers(init.headers || (input && input.headers) || {});
+      h.set('X-CSRF-Token', t);
+      init.headers = h;
+    }
+    return orig.call(this, input, init);
+  };
+})();
+</script>
 <style>
   header.tnav{display:flex;align-items:center;gap:20px;padding:0 24px;background:#fff;
     border-bottom:1px solid #e4e7ec;position:sticky;top:0;z-index:20;height:54px;box-sizing:border-box}

@@ -132,6 +132,7 @@
   <h1>站点管理</h1>
   <p>设置检查项开关、中英文生效范围。保存后「全量问题」页会按新配置显示。</p>
   <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="password" name="password" placeholder="管理口令" autofocus autocomplete="current-password">
     <button type="submit">进入</button>
     {% if err %}<div class="err">{{ err }}</div>{% endif %}
@@ -143,7 +144,8 @@
     <h1>站点管理</h1>
     <span class="rule">检查项开关</span>
     <span class="sp"></span>
-    <form method="post" action="/admin/logout" style="margin:0"><button>退出后台</button></form>
+    <form method="post" action="/admin/logout" style="margin:0">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button>退出后台</button></form>
   </div>
   <div class="subtabs">
     <button class="on" data-tab="rules">检查项</button>

@@ -5,12 +5,14 @@ from __future__ import annotations
 import hmac
 import json
 import os
+import secrets
 import re
 import subprocess
 import time
 from datetime import datetime
 import sys
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import yaml
 from flask import (Flask, abort, jsonify, redirect, render_template, request,
@@ -63,6 +65,68 @@ _FAIL_MAX, _FAIL_WINDOW, _FAIL_LOCK = 8, 600, 900   # 10 分钟内错 8 次 → 
 
 def _client_ip() -> str:
     return (request.headers.get("X-Real-IP") or request.remote_addr or "").strip()
+
+
+# ---------------- CSRF / 同源：写操作只能从本站页面发起 ----------------
+_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+CSRF_HEADER = "X-CSRF-Token"
+
+
+def _csrf_token() -> str:
+    """会话级令牌：首次渲染页面时生成，之后一直复用（签名 cookie，多 worker 共享）。"""
+    t = session.get("csrf")
+    if not t:
+        t = secrets.token_urlsafe(24)
+        session["csrf"] = t
+    return t
+
+
+@app.context_processor
+def _inject_csrf():
+    return {"csrf_token": _csrf_token}
+
+
+def _same_origin(url: str) -> bool:
+    try:
+        return urlsplit(url).netloc == request.host
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _csrf_reject(msg: str):
+    if request.path.startswith("/api/"):
+        return jsonify({"ok": False, "error": msg}), 403
+    return (f"<div style='font:15px/1.8 system-ui;padding:60px;text-align:center'>"
+            f"<h2 style='margin:0 0 8px'>请求被拒绝</h2>"
+            f"<p style='color:#777'>{msg}</p>"
+            f"<p><a href='/issues'>← 回到全量问题</a></p></div>", 403)
+
+
+@app.before_request
+def _csrf_guard():
+    """所有写操作（POST/PUT/PATCH/DELETE）：
+    ① 带 Origin/Referer 的必须同源；/api/ 下连来源头都没有的直接拒（挡住 curl 直线调用）；
+    ② 必须带页面内的一次性令牌（X-CSRF-Token 头或表单 csrf_token 字段）。
+    """
+    if request.method in _SAFE_METHODS:
+        return None
+    origin = (request.headers.get("Origin") or "").strip()
+    referer = (request.headers.get("Referer") or "").strip()
+    if origin:
+        if not _same_origin(origin):
+            return _csrf_reject("跨站请求被拒绝")
+    elif referer:
+        if not _same_origin(referer):
+            return _csrf_reject("跨站请求被拒绝")
+    elif request.path.startswith("/api/"):
+        return _csrf_reject("缺少来源信息，请从站点页面操作")
+    tok = (request.headers.get(CSRF_HEADER) or "").strip()
+    if not tok and request.mimetype in ("application/x-www-form-urlencoded", "multipart/form-data"):
+        tok = (request.form.get("csrf_token") or "").strip()
+    want = session.get("csrf") or ""
+    if not want or not tok or not hmac.compare_digest(tok, want):
+        return _csrf_reject("页面令牌已失效，请刷新页面后重试")
+    return None
 
 
 @app.before_request
