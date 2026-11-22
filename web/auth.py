@@ -163,6 +163,16 @@ def register_auth(app) -> None:
             "id": str(u.get("id") or ""),
             "avatar": u.get("avatar_url") or "",
         }
+        try:                                    # 登录日志（站点管理 · 用户管理用）
+            import users as _users
+            from ds_db import DB as _DB
+            _conn = _DB(str(Path(__file__).resolve().parent.parent / "data" / "docstor.db")).conn
+            _users.log_login(_conn, login, session["user"]["name"],
+                             request.headers.get("X-Forwarded-For", request.remote_addr or "").split(",")[0].strip(),
+                             request.headers.get("User-Agent", ""))
+            _conn.close()
+        except Exception as e:  # noqa: BLE001
+            app.logger.warning("登录日志写入失败: %s", e)
         session.permanent = True
         return redirect(session.pop("after_login", "") or "/issues")
 

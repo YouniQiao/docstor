@@ -23,6 +23,7 @@ import checks  # noqa: E402
 import auth as gcauth  # noqa: E402  GitCode 登录（web/auth.py）
 import issueq  # noqa: E402  筛选条件构造（列表/导出/订阅共用）
 import subs as subcenter  # noqa: E402  个人中心 + 邮件订阅
+import users as usermgr  # noqa: E402  站点管理 · 用户管理
 import ds_catalog
 import ds_db  # noqa: E402
 import ds_alias  # noqa: E402
@@ -106,6 +107,7 @@ gcauth.init_app(app)
 
 _db = ds_db.DB(str(DB_PATH))
 ds_rules.ensure(_db.conn, checks.REGISTRY)
+usermgr.ensure_schema(_db.conn)
 try:                                  # 别名表只在缺失文档时才用到，起不来也不影响主站
     ds_alias.build(_db.conn)
 except Exception:  # noqa: BLE001
@@ -1012,6 +1014,79 @@ def _ai_calls(page: int) -> dict:
                 "pages": max(1, (total + size - 1) // size)}
     except Exception as e:  # noqa: BLE001
         return {"rows": [], "total": 0, "page": 0, "size": 20, "pages": 1, "error": str(e)[:120]}
+
+
+# ---------------- 站点管理 · 用户管理 ----------------
+# 注意：conn() 是进程级共享连接，这里绝不能 close()（关掉会让后续请求全 500）
+def _users_conn():
+    return conn()
+
+
+def _user_count_of(c):
+    """某个关注范围当前的条数（与全量问题/日报同口径：可见规则 + 规则适用语言）。"""
+    def f(params: dict) -> int:
+        where, args = issueq.issue_where(params, _enabled_filter)   # 传函数，不是它的返回值
+        return c.execute(f"SELECT COUNT(*) FROM issues i WHERE {where}", args).fetchone()[0]
+    return f
+
+
+@app.get("/api/admin/users")
+def api_admin_users():
+    if not is_admin():
+        return jsonify({"ok": False, "error": "未登录"}), 403
+    c = _users_conn()
+    q = (request.args.get("q") or "").strip()[:60]
+    page = _int_arg("page", 0, 0, 10000)
+    return jsonify({"ok": True, "stats": usermgr.stats(c),
+                    "list": usermgr.list_users(c, q, page, 20)})
+
+
+@app.get("/api/admin/users/<login>")
+def api_admin_user_detail(login):
+    if not is_admin():
+        return jsonify({"ok": False, "error": "未登录"}), 403
+    c = _users_conn()
+    names = {**SECTION_NAMES, **SECTION_NAMES_EN}
+    d = usermgr.user_detail(c, login, describe=subcenter.describe, section_names=names,
+                            rule_label=checks.rule_label, count_of=_user_count_of(c))
+    if not d.get("found"):
+        return jsonify({"ok": False, "error": "没有这个用户"}), 404
+    return jsonify({"ok": True, "user": d})
+
+
+@app.post("/api/admin/users/<login>/active")
+def api_admin_user_active(login):
+    if not is_admin():
+        return jsonify({"ok": False, "error": "未登录"}), 403
+    want = bool((request.get_json(silent=True) or {}).get("active"))
+    ok, msg = usermgr.set_active(_users_conn(), login, want)
+    return jsonify({"ok": ok, "msg": msg}), (200 if ok else 400)
+
+
+@app.post("/api/admin/users/<login>/unbind")
+def api_admin_user_unbind(login):
+    if not is_admin():
+        return jsonify({"ok": False, "error": "未登录"}), 403
+    ok, msg = usermgr.unbind(_users_conn(), login)
+    return jsonify({"ok": ok, "msg": msg}), (200 if ok else 400)
+
+
+@app.get("/api/admin/sends")
+def api_admin_sends():
+    if not is_admin():
+        return jsonify({"ok": False, "error": "未登录"}), 403
+    return jsonify({"ok": True, "list": usermgr.sends_page(
+        _users_conn(), _int_arg("page", 0, 0, 10000), 20,
+        (request.args.get("q") or "").strip()[:60])})
+
+
+@app.get("/api/admin/ignores")
+def api_admin_ignores():
+    if not is_admin():
+        return jsonify({"ok": False, "error": "未登录"}), 403
+    return jsonify({"ok": True, "list": usermgr.ignores_page(
+        _users_conn(), _int_arg("page", 0, 0, 10000), 20,
+        (request.args.get("q") or "").strip()[:60])})
 
 
 @app.get("/api/admin/ai")

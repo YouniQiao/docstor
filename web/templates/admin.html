@@ -70,6 +70,25 @@
   .aist .l{font-size:12px;color:var(--muted);margin-top:2px}
   .aiwrap{overflow-x:auto}
   .ait td.mono,.ait th{white-space:nowrap}
+  .uq{padding:5px 9px;font-size:12.5px;border:1px solid var(--border);border-radius:6px;width:190px;margin-right:8px}
+  .ut td{padding:8px 10px;font-size:12.5px;vertical-align:top}
+  .subn{color:var(--muted);font-size:11.5px;margin-top:2px}
+  .okc{color:#128c4a}
+  .umail{cursor:pointer;border-bottom:1px dashed #c3ccd8}
+  .umail:hover{color:var(--accent)}
+  .uchip{display:inline-block;padding:1px 7px;border-radius:10px;font-size:11.5px;background:#eef2f7;color:#4a5568}
+  .uchip.okc{background:#e6f4ea;color:#128c4a}
+  .uchip.hot{background:#fdecec;color:#d13438}
+  .urow:hover{background:#fafbfc}
+  .udrow td{background:#f7f9fc;padding:0}
+  .ud{padding:14px 16px}
+  .udh{font-size:13px;font-weight:600;margin-bottom:10px}
+  .udg{display:flex;gap:18px;flex-wrap:wrap}
+  .udc{flex:1;min-width:320px}
+  .udc h4{margin:0 0 6px;font-size:12.5px;color:#1f2430;font-weight:600}
+  .udc table{width:100%;border-collapse:collapse}
+  .udc td,.udc th{padding:4px 8px;font-size:12px;border-bottom:1px solid #e8edf3;text-align:left}
+  .udc th{color:var(--muted);font-weight:500}
   .aipg{display:flex;align-items:center;gap:10px;justify-content:flex-end;margin-top:10px;font-size:12.5px;color:var(--muted)}
   .subtabs{display:flex;gap:2px;border-bottom:1px solid var(--border);margin:0 0 16px}
   .subtabs button{border:none;background:none;padding:8px 14px;font-size:13.5px;color:var(--muted);
@@ -130,6 +149,7 @@
     <button class="on" data-tab="rules">检查项</button>
     <button data-tab="cache">数据缓存</button>
     <button data-tab="ai">AI 能力</button>
+    <button data-tab="users">用户管理</button>
   </div>
 
   <div class="pane" id="pane-rules">
@@ -314,6 +334,88 @@
     </div>
   </div>
   </div><!-- /pane-ai -->
+
+  <div class="pane" id="pane-users" hidden>
+    <div class="card">
+      <div class="cachehd">
+        <h2 style="margin:0">用户管理</h2>
+        <span class="sum" id="u-sum">GitCode 登录用户 · 订阅账号 · 忽略操作</span>
+        <span class="sp"></span>
+        <input class="uq" id="u-q" placeholder="搜索登录名 / 姓名 / 邮箱" autocomplete="off">
+        <button class="mini" id="u-refresh">刷新</button>
+      </div>
+      <div class="aistats" id="u-stats"></div>
+      <div class="aiwrap">
+        <table class="cache ait ut">
+          <thead><tr>
+            <th style="width:140px">用户</th><th style="width:180px">邮箱</th>
+            <th style="width:80px">关注范围</th><th style="width:120px">最近登录</th>
+            <th style="width:120px">最近收信</th><th class="n" style="width:60px">忽略</th>
+            <th style="width:84px">状态</th><th style="width:206px">操作</th>
+          </tr></thead>
+          <tbody id="u-body">
+            <tr><td colspan="8" class="muted" style="text-align:center;padding:18px">加载中…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="aipg">
+        <button class="mini" id="u-prev" disabled>上一页</button>
+        <span id="u-pginfo">第 1 / 1 页</span>
+        <button class="mini" id="u-next" disabled>下一页</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="cachehd">
+        <h2 style="margin:0">发信流水</h2>
+        <span class="sum">每天 8:00 主发 · 9:30 补发，失败原因在这里看</span>
+        <span class="sp"></span>
+        <input class="uq" id="s-q" placeholder="搜索登录名 / 收件邮箱" autocomplete="off">
+      </div>
+      <div class="aiwrap">
+        <table class="cache ait ut">
+          <thead><tr>
+            <th style="width:150px">时间</th><th style="width:170px">收件人</th>
+            <th class="n" style="width:64px">组数</th><th class="n" style="width:76px">条数</th>
+            <th class="n" style="width:76px">今日新增</th><th style="width:70px">结果</th><th>说明</th>
+          </tr></thead>
+          <tbody id="s-body">
+            <tr><td colspan="7" class="muted" style="text-align:center;padding:18px">加载中…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="aipg">
+        <button class="mini" id="s-prev" disabled>上一页</button>
+        <span id="s-pginfo">第 1 / 1 页</span>
+        <button class="mini" id="s-next" disabled>下一页</button>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:16px">
+      <div class="cachehd">
+        <h2 style="margin:0">忽略审计</h2>
+        <span class="sum">谁在什么时候忽略了哪条问题（可在全量问题页恢复）</span>
+        <span class="sp"></span>
+        <input class="uq" id="g-q" placeholder="搜索忽略人 / 文档" autocomplete="off">
+      </div>
+      <div class="aiwrap">
+        <table class="cache ait ut">
+          <thead><tr>
+            <th style="width:150px">忽略时间</th><th style="width:110px">忽略人</th>
+            <th style="width:130px">问题类型</th><th style="width:240px">文档</th><th>问题</th>
+          </tr></thead>
+          <tbody id="g-body">
+            <tr><td colspan="5" class="muted" style="text-align:center;padding:18px">加载中…</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="aipg">
+        <button class="mini" id="g-prev" disabled>上一页</button>
+        <span id="g-pginfo">第 1 / 1 页</span>
+        <button class="mini" id="g-next" disabled>下一页</button>
+      </div>
+    </div>
+  </div><!-- /pane-users -->
 </div>
 
 <div class="toast" id="toast"></div>
@@ -364,12 +466,13 @@ document.querySelectorAll('tr[data-rule]:not(.pend)').forEach(tr=>{
 /* ── 页签：检查项 / 数据缓存 / AI 能力 ── */
 const tabBtns = [...document.querySelectorAll('.subtabs button')];
 const panes = { rules: document.getElementById('pane-rules'), cache: document.getElementById('pane-cache'),
-                ai: document.getElementById('pane-ai') };
+                ai: document.getElementById('pane-ai'), users: document.getElementById('pane-users') };
 function showTab(name){
   tabBtns.forEach(b => b.classList.toggle('on', b.dataset.tab === name));
   Object.entries(panes).forEach(([k, el]) => { if (el) el.hidden = (k !== name); });
   if (name === 'cache') { history.replaceState(null, '', '#cache'); loadCache(); }
   else if (name === 'ai') { history.replaceState(null, '', '#ai'); loadAi(0); }
+  else if (name === 'users') { history.replaceState(null, '', '#users'); loadUsersAll(); }
   else history.replaceState(null, '', location.pathname + location.search);
 }
 tabBtns.forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
@@ -438,6 +541,196 @@ function wireRecheck(){
     else { toast('失败：' + (d.error || r.status)); b.disabled = false; b.textContent = label; }
   });
 }
+/* ── 用户管理：用户列表 / 详情 / 发信流水 / 忽略审计 ── */
+let uPage = 0, sPage = 0, gPage = 0;
+const qv = id => (document.getElementById(id).value || '').trim();
+const fmtTime = s => s ? String(s).slice(5, 16) : '—';
+
+function renderUsers(d) {
+  const st = d.stats || {}, L = d.list || {};
+  uPage = L.page || 0;
+  document.getElementById('u-stats').innerHTML = [
+    ['登录用户', st.logins], ['近 7 天登录', st.logins_7d],
+    ['订阅账号', st.subscribers], ['邮箱已确认', st.verified],
+    ['已停用收信', Math.max(0, (st.subscribers || 0) - (st.active || 0))], ['关注范围', st.subs],
+  ].map(([l, n]) => `<div class="aist"><div class="n">${fmtN(n)}</div><div class="l">${l}</div></div>`).join('');
+  const rows = L.rows || [];
+  document.getElementById('u-body').innerHTML = rows.length ? rows.map((u, i) => {
+    const mail = u.email
+      ? `<span class="umail" data-full="${esc(u.email)}" data-mask="${esc(u.email_masked)}">${esc(u.email_masked)}</span>`
+      : '<span class="muted">—</span>';
+    const cls = u.state === '已停用' ? 'hot' : (u.state === '已确认' ? 'okc' : '');
+    const send = u.last_send
+      ? `${fmtTime(u.last_send)}${u.last_send_ok === false ? ' <span class="hot">失败</span>' : ''}<div class="subn">共 ${fmtN(u.sends_ok)} 封</div>`
+      : '<span class="muted">—</span>';
+    const acts = [];
+    if (u.email) {
+      acts.push(u.active
+        ? `<button class="mini" data-act="off" data-login="${esc(u.login)}">停用收信</button>`
+        : `<button class="mini" data-act="on" data-login="${esc(u.login)}">恢复收信</button>`);
+      acts.push(`<button class="mini" data-act="unbind" data-login="${esc(u.login)}">解绑邮箱</button>`);
+    }
+    return `<tr class="urow">
+      <td><b>${esc(u.login)}</b><div class="subn">${esc(u.name || '')}</div></td>
+      <td>${mail}<div class="subn ${cls}">${esc(u.state)}</div></td>
+      <td>${u.subs ? u.subs + ' 组' : '<span class="muted">—</span>'}${u.subs_on !== u.subs ? `<div class="subn">启用 ${u.subs_on}</div>` : ''}</td>
+      <td class="mono">${u.last_login ? fmtTime(u.last_login) : '<span class="muted">—</span>'}${u.logins_30d ? `<div class="subn">30 天 ${u.logins_30d} 次</div>` : ''}</td>
+      <td class="mono">${send}</td>
+      <td class="n">${u.ignores || '—'}</td>
+      <td><span class="uchip ${cls}">${esc(u.state)}</span></td>
+      <td><button class="mini" data-detail="${esc(u.login)}">详情</button> ${acts.join(' ')}</td>
+    </tr>
+    <tr class="udrow" data-for="${esc(u.login)}" hidden><td colspan="8"></td></tr>`;
+  }).join('') : '<tr><td colspan="8" class="muted" style="text-align:center;padding:18px">没有匹配的用户</td></tr>';
+  document.getElementById('u-pginfo').textContent = `第 ${(L.page || 0) + 1} / ${L.pages || 1} 页 · 共 ${fmtN(L.total)} 人`;
+  document.getElementById('u-prev').disabled = !L.page;
+  document.getElementById('u-next').disabled = (L.page + 1) >= (L.pages || 1);
+}
+
+function renderUserDetail(u) {
+  const subs = (u.subs || []).map(s => `<tr><td>${esc(s.label)}</td><td class="muted">${esc(s.desc && s.desc !== s.label ? s.desc : '—')}</td>
+      <td class="n">${s.n == null ? '—' : fmtN(s.n)}</td><td>${s.enabled ? '开' : '<span class="muted">关</span>'}</td></tr>`).join('')
+    || '<tr><td colspan="4" class="muted">没有关注范围</td></tr>';
+  const sends = (u.sends || []).map(s => `<tr><td class="mono">${fmtTime(s.sent_at)}</td><td class="n">${s.groups}</td>
+      <td class="n">${fmtN(s.issues)}</td><td class="n">${s.new_today}</td>
+      <td>${s.ok ? '<span class="okc">成功</span>' : '<span class="hot">失败</span>'}</td>
+      <td class="muted">${esc((s.error || '').slice(0, 60))}</td></tr>`).join('')
+    || '<tr><td colspan="6" class="muted">还没有发信记录</td></tr>';
+  const logins = (u.logins || []).map(l => `<tr><td class="mono">${esc(l.ts)}</td><td class="mono">${esc(l.ip || '—')}</td>
+      <td class="muted" title="${esc(l.ua)}">${esc((l.ua || '').slice(0, 46))}</td></tr>`).join('')
+    || '<tr><td colspan="3" class="muted">没有登录记录（本期开始记录）</td></tr>';
+  const ign = (u.ignores || []).map(g => `<tr><td class="mono">${esc(g.ignored_at || '')}</td>
+      <td>${esc(g.rule)}</td><td class="muted">${esc(g.doc_key)}</td></tr>`).join('')
+    || '<tr><td colspan="3" class="muted">没有忽略记录</td></tr>';
+  return `<div class="ud">
+    <div class="udh">${esc(u.login)} · ${esc(u.name || '—')}
+      <span class="muted" style="font-weight:400">${esc(u.email_masked || '未绑定邮箱')}</span>
+      ${u.active ? '' : '<span class="uchip hot">已停用收信</span>'}
+      ${u.verified ? '<span class="uchip okc">邮箱已确认</span>' : ''}
+      <span class="muted" style="font-weight:400">注册 ${esc((u.created_at || '').slice(0, 10) || '—')}</span></div>
+    <div class="udg">
+      <div class="udc"><h4>关注范围 ${u.subs.length} 组</h4>
+        <table><thead><tr><th>名称</th><th>条件</th><th class="n">当前条数</th><th>开关</th></tr></thead><tbody>${subs}</tbody></table></div>
+      <div class="udc"><h4>最近发信</h4>
+        <table><thead><tr><th>时间</th><th class="n">组</th><th class="n">条</th><th class="n">新增</th><th>结果</th><th>说明</th></tr></thead><tbody>${sends}</tbody></table></div>
+    </div>
+    <div class="udg" style="margin-top:12px">
+      <div class="udc"><h4>最近登录</h4>
+        <table><thead><tr><th>时间</th><th>IP</th><th>UA</th></tr></thead><tbody>${logins}</tbody></table></div>
+      <div class="udc"><h4>忽略记录</h4>
+        <table><thead><tr><th>时间</th><th>类型</th><th>文档</th></tr></thead><tbody>${ign}</tbody></table></div>
+    </div></div>`;
+}
+
+async function loadUsers(page) {
+  try {
+    const r = await fetch(`/api/admin/users?page=${page || 0}&q=${encodeURIComponent(qv('u-q'))}`, { cache: 'no-store' });
+    const d = await r.json();
+    if (d.ok) renderUsers(d); else toast('读取失败：' + (d.error || r.status));
+  } catch (e) { toast('读取失败：' + e.message); }
+}
+
+async function loadUserDetail(login, tr) {
+  const box = tr.nextElementSibling;
+  if (box && !box.hidden) { box.hidden = true; return; }
+  if (box && box.querySelector('.ud')) { box.hidden = false; return; }
+  try {
+    const r = await fetch(`/api/admin/users/${encodeURIComponent(login)}`, { cache: 'no-store' });
+    const d = await r.json();
+    if (!d.ok) return toast('读取失败：' + (d.error || r.status));
+    box.querySelector('td').innerHTML = renderUserDetail(d.user);
+    box.hidden = false;
+  } catch (e) { toast('读取失败：' + e.message); }
+}
+
+async function userAction(login, act) {
+  if (act === 'unbind') {
+    if (!confirm(`解绑 ${login} 的邮箱？
+关注范围保留，但不再发送日报，需要重新绑定并确认才会恢复。`)) return;
+  } else {
+    const on = act === 'on';
+    if (!confirm(on ? `恢复 ${login} 的日报发送？` : `停用 ${login} 的日报发送？
+关注范围保留，只是不再发信。`)) return;
+  }
+  const url = act === 'unbind' ? `/api/admin/users/${encodeURIComponent(login)}/unbind`
+                               : `/api/admin/users/${encodeURIComponent(login)}/active`;
+  const body = act === 'unbind' ? {} : { active: act === 'on' };
+  try {
+    const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    const d = await r.json();
+    toast(d.msg || d.error || (r.ok ? '已处理' : '失败了'));
+    if (r.ok) { loadUsers(uPage); loadSends(sPage); }
+  } catch (e) { toast('操作失败：' + e.message); }
+}
+
+function renderSends(L) {
+  sPage = L.page || 0;
+  const rows = L.rows || [];
+  document.getElementById('s-body').innerHTML = rows.length ? rows.map(s => `<tr>
+      <td class="mono">${esc(s.sent_at)}</td><td>${esc(s.login)}<div class="subn">${esc(s.email || '')}</div></td>
+      <td class="n">${s.groups}</td><td class="n">${fmtN(s.issues)}</td><td class="n">${s.new_today}</td>
+      <td>${s.ok ? '<span class="okc">成功</span>' : '<span class="hot">失败</span>'}</td>
+      <td class="muted">${esc((s.error || '').slice(0, 90))}</td></tr>`).join('')
+    : '<tr><td colspan="7" class="muted" style="text-align:center;padding:18px">还没有发信记录</td></tr>';
+  document.getElementById('s-pginfo').textContent = `第 ${(L.page || 0) + 1} / ${L.pages || 1} 页 · 共 ${fmtN(L.total)} 封`;
+  document.getElementById('s-prev').disabled = !L.page;
+  document.getElementById('s-next').disabled = (L.page + 1) >= (L.pages || 1);
+}
+
+async function loadSends(page) {
+  try {
+    const r = await fetch(`/api/admin/sends?page=${page || 0}&q=${encodeURIComponent(qv('s-q'))}`, { cache: 'no-store' });
+    const d = await r.json();
+    if (d.ok) renderSends(d.list); else toast('读取失败：' + (d.error || r.status));
+  } catch (e) { toast('读取失败：' + e.message); }
+}
+
+function renderIgnores(L) {
+  gPage = L.page || 0;
+  const rows = L.rows || [];
+  document.getElementById('g-body').innerHTML = rows.length ? rows.map(g => `<tr>
+      <td class="mono">${esc(g.ignored_at || '')}</td><td><b>${esc(g.ignored_by)}</b></td>
+      <td>${esc(g.rule)}</td><td class="muted">${esc(g.doc_key)}</td>
+      <td class="muted">${esc((g.message || '').slice(0, 90))}</td></tr>`).join('')
+    : '<tr><td colspan="5" class="muted" style="text-align:center;padding:18px">还没有忽略操作</td></tr>';
+  document.getElementById('g-pginfo').textContent = `第 ${(L.page || 0) + 1} / ${L.pages || 1} 页 · 共 ${fmtN(L.total)} 条`;
+  document.getElementById('g-prev').disabled = !L.page;
+  document.getElementById('g-next').disabled = (L.page + 1) >= (L.pages || 1);
+}
+
+async function loadIgnores(page) {
+  try {
+    const r = await fetch(`/api/admin/ignores?page=${page || 0}&q=${encodeURIComponent(qv('g-q'))}`, { cache: 'no-store' });
+    const d = await r.json();
+    if (d.ok) renderIgnores(d.list); else toast('读取失败：' + (d.error || r.status));
+  } catch (e) { toast('读取失败：' + e.message); }
+}
+
+function loadUsersAll() { loadUsers(0); loadSends(0); loadIgnores(0); }
+
+document.getElementById('u-refresh').onclick = loadUsersAll;
+document.getElementById('u-prev').onclick = () => loadUsers(Math.max(0, uPage - 1));
+document.getElementById('u-next').onclick = () => loadUsers(uPage + 1);
+document.getElementById('s-prev').onclick = () => loadSends(Math.max(0, sPage - 1));
+document.getElementById('s-next').onclick = () => loadSends(sPage + 1);
+document.getElementById('g-prev').onclick = () => loadIgnores(Math.max(0, gPage - 1));
+document.getElementById('g-next').onclick = () => loadIgnores(gPage + 1);
+document.getElementById('u-q').addEventListener('keydown', e => { if (e.key === 'Enter') loadUsers(0); });
+document.getElementById('s-q').addEventListener('keydown', e => { if (e.key === 'Enter') loadSends(0); });
+document.getElementById('g-q').addEventListener('keydown', e => { if (e.key === 'Enter') loadIgnores(0); });
+document.getElementById('u-body').addEventListener('click', e => {
+  const mail = e.target.closest('.umail');
+  if (mail) {
+    const full = mail.dataset.full, mask = mail.dataset.mask;
+    mail.textContent = (mail.textContent === full) ? mask : full;
+    return;
+  }
+  const det = e.target.closest('button[data-detail]');
+  if (det) { loadUserDetail(det.dataset.detail, det.closest('tr')); return; }
+  const act = e.target.closest('button[data-act]');
+  if (act) userAction(act.dataset.login, act.dataset.act);
+});
+
 /* ── AI 能力：额度 / 累计 / 最近调用 ── */
 let aiPage = 0;
 const fmtN = n => (n || 0).toLocaleString();
@@ -499,6 +792,7 @@ document.getElementById('cache-refresh').onclick = loadCache;
 wireRecheck();
 if (location.hash === '#cache') showTab('cache');
 if (location.hash === '#ai') showTab('ai');
+if (location.hash === '#users') showTab('users');
 </script>
 {% endif %}
 </body>
