@@ -94,6 +94,10 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=0, help="每个板块只抓前 N 篇（冒烟用）")
     ap.add_argument("--skip-ingest", action="store_true")
     ap.add_argument("--skip-check", action="store_true")
+    ap.add_argument("--skip-ai-review", action="store_true",
+                    help="跳过文本检查的 AI 预判（重复字等候选）")
+    ap.add_argument("--ai-review-limit", type=int, default=200,
+                    help="每轮最多给多少条新候选做 AI 判定（保护额度，默认 200）")
     ap.add_argument("--workers", type=int, default=8, help="检查并发")
     ap.add_argument("--new-docs-only", action="store_true", help="兼容旧参数，无作用")
     args = ap.parse_args()
@@ -142,6 +146,26 @@ def main() -> int:
                         failed.append(f"ingest {lang}/{sec}")
     else:
         log("   ⏭  跳过抓取")
+
+    # ── 1.5 文本检查 AI 预判 ────────────────────────────────────────
+    # 重复字这类规则是「候选 + AI 复核」：AI 没判过的候选不上报。
+    # 每天只补判新增的（已在库里的跳过），并限量，避免一次抓取异常把额度烧光。
+    if not args.skip_check and not args.skip_ai_review:
+        if not (BASE / "data" / "text_words_cn.txt").exists():   # 词界判据，缺了先建
+            run_step([sys.executable, "scripts/build_text_words.py"],
+                     LOGDIR / f"{stamp}_text_words.log", timeout=1800)
+        cmd = [sys.executable, "scripts/text_ai_review.py", "--select", "all",
+               "--workers", "6", "--limit", str(args.ai_review_limit)]
+        lp = LOGDIR / f"{stamp}_text_ai_review.log"
+        rc, dt = run_step(cmd, lp, timeout=3600)
+        steps.append({"step": "text_ai_review", "rc": rc, "seconds": round(dt, 1)})
+        if rc == 0:
+            log(f"   ✅ 文本候选 AI 预判完成，{dt:.0f}s")
+        else:
+            log(f"   ⚠️  文本候选 AI 预判失败（rc={rc}）；日志 {lp}")
+            failed.append("text_ai_review")
+    else:
+        log("   ⏭  跳过文本 AI 预判")
 
     # ── 2. 全量检查 ─────────────────────────────────────────────────
     if not args.skip_check:
