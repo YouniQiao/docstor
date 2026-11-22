@@ -34,6 +34,8 @@
 from __future__ import annotations
 
 import re
+import sqlite3
+from pathlib import Path
 
 from .base import Issue, register
 
@@ -195,21 +197,172 @@ def check_typo(doc, ctx):
     return []
 
 
+# ── ③ 重复字：候选枚举（AI 复核过的才算问题） ──
+HAN = re.compile(r"[\u4e00-\u9fff]")
+TABLE_SEP = re.compile(r"^[\s|:\-+]+$")
+
+# 正常叠词/惯用重复：直接跳过，省 AI 调用。判不准的一律交给 AI，不靠这张表兜底。
+REDUP_OK = set("""
+看看 说说 想想 试试 问问 听听 走走 坐坐 等等 讲讲 做做 用用 查查 改改 试试 记记 学学 读读
+慢慢 渐渐 稍稍 略略 微微 深深 高高 远远 多多 少少 快快 早早 好好 紧紧 牢牢 稳稳 悄悄 偷偷
+默默 缓缓 悠悠 纷纷 统统 通通 常常 往往 时时 处处 人人 家家 天天 年年 月月 日日 步步 层层
+重重 点点 滴滴 丝丝 片片 阵阵 声声 句句 条条 个个 种种 件件 次次 遍遍 一一 一一对 各各
+通通 处处 处处 时时 往往 慢慢 徐徐 冉冉 潺潺 滚滚 茫茫 苍苍 匆匆 纷纷 个个 阵阵 悠悠
+""".split())
+
+
+def iter_corpus(text: str):
+    """产出 (来源, 行号, 文本)。来源 = prose（正文） / comment（代码注释）。"""
+    for line_no, t in prose_lines(text):
+        yield "prose", line_no, t
+    for line_no, body, _lang in code_comment_lines(text):
+        yield "comment", line_no, body
+
+
+def _redup_hits(line: str):
+    """一行里的重复片段：[(列号, 片段)]。双字词重复优先（「进行进行」不再拆成单字）。"""
+    out = []
+    n = len(line)
+    i = 0
+    while i < n - 1:
+        if (i + 3 < n and HAN.match(line[i]) and HAN.match(line[i + 1])
+                and line[i:i + 2] == line[i + 2:i + 4]):
+            out.append((i, line[i:i + 4]))
+            i += 4
+            continue
+        if line[i] == line[i + 1] and HAN.match(line[i]):
+            out.append((i, line[i:i + 2]))
+            i += 2
+            continue
+        i += 1
+    return out
+
+
+# 「时间间隔」「参数数据」「动作动画」这类相邻两个词共用一个字，中文里极多
+# （实测占单字重复候选的 84%）。用文档自身统计出的二字词表判词界，直接跳过，
+# 既省 AI 调用又不误杀——词表由 scripts/build_text_words.py 生成。
+_WORDS: set[str] | None = None
+
+
+def word_set() -> set[str]:
+    global _WORDS
+    if _WORDS is None:
+        p = Path(__file__).resolve().parent.parent / "data" / "text_words_cn.txt"
+        try:
+            _WORDS = set(p.read_text(encoding="utf-8").split())
+        except Exception:  # noqa: BLE001
+            _WORDS = set()
+    return _WORDS
+
+
+def is_boundary(hit: dict) -> bool:
+    """重复片段左右各是一个常见二字词 → 词界重合，不是重复录入。"""
+    pat = hit.get("pattern") or ""
+    if len(pat) != 2:
+        return False
+    ctx = hit.get("context") or ""
+    i = hit.get("idx", -1)
+    if i < 1 or i + 3 > len(ctx):
+        return False
+    w = word_set()
+    return bool(w) and ctx[i - 1:i + 1] in w and ctx[i + 1:i + 3] in w
+
+
+def find_dup_candidates(text: str, skip_ok: bool = True, skip_boundary: bool = True):
+    """找重复字候选（正文 + 代码注释）。返回 [{source,line,col,idx,pattern,context}]。"""
+    hits = []
+    for source, line_no, line in iter_corpus(text):
+        s = line.strip()
+        if not s or TABLE_SEP.match(s):
+            continue
+        for col, pat in _redup_hits(line):
+            if skip_ok and pat in REDUP_OK:
+                continue
+            hit = {"source": source, "line": line_no, "col": col,
+                   "idx": col - (len(line) - len(line.lstrip())),
+                   "pattern": pat, "context": s[:160]}
+            if skip_boundary and is_boundary(hit):
+                continue
+            hits.append(hit)
+    return hits
+
+
+def dup_key(pattern: str, context: str, source: str) -> str:
+    """AI 结论的键：同一行同一片段稳定；行文改了会重新判。"""
+    import hashlib
+    raw = f"{pattern}|{source}|{context}".encode()
+    return "dup:" + hashlib.sha1(raw).hexdigest()[:20]
+
+
+RULE_DUP = "text.dup_char"
+NOTE_KIND_DUP = "dup_char_review"
+_REAL: set[str] | None = None
+_REAL_KEY = ""
+
+
+def _real_notes(ctx) -> set[str]:
+    """AI 判为「真重复」的候选键集合。每进程只读一次（结论由 scripts/text_ai_review.py 落库）。"""
+    global _REAL, _REAL_KEY
+    db_path = ""
+    try:
+        db_path = str(Path(ctx.db.conn.execute("PRAGMA database_list").fetchone()[2]).resolve())
+    except Exception:  # noqa: BLE001
+        db_path = ""
+    if _REAL is not None and _REAL_KEY == db_path:
+        return _REAL
+    s: set[str] = set()
+    try:
+        conn = sqlite3.connect(db_path or ctx.db.path, timeout=20)
+        try:
+            for (k,) in conn.execute("SELECT item_key FROM ai_notes WHERE kind=? AND verdict='real'",
+                                     (NOTE_KIND_DUP,)):
+                s.add(k)
+        finally:
+            conn.close()
+    except Exception:  # noqa: BLE001
+        s = set()
+    _REAL, _REAL_KEY = s, db_path
+    return s
+
+
 @register("text.dup_char", label="重复字", severity="warn", default_visible=False,
           ai_hint="重复字/词检查。指连续重复的同一个字或同一双字词（「的的」「进行进行」），"
                   "不算正常叠词（看看、慢慢、渐渐）、不算英文/数字重复、不算表格。"
                   "改法是删掉多余的一个字/词。")
 def check_dup_char(doc, ctx):
-    """重复字/词（骨架，未实现）。
+    """重复字/词：正文 + 代码注释里的候选，只有 AI 判为 real 才上报。
 
-    语料：正文 + 代码注释（注释里「的的」「进行进行」同样算）。
-
-    计划：
-      1) 汉字单字重复：逐字比较（Python re 的 \\1 不能匹配汉字类，别用正则反向引用）；
-      2) 双字词重复：「(..)\\1」限定两边都是汉字，且排除叠词白名单；
-      3) 排除：英文单词、数字、标点成对（「。。」「、、」）、表格分隔行。
+    流程（与图片检查同一套闸门）：
+      1) find_dup_candidates() 出候选（跳过正常叠词；表格分隔行不看）；
+      2) scripts/text_ai_review.py 把候选逐条交 AI 判断，结论写 ai_notes(kind=dup_char_review)；
+      3) 这里只读库，verdict == 'real' 才报；同一篇文档同一个片段合并成一条。
+    为什么不按行报：一篇文档里「的的」出现 3 次，同事只需要一条问题 + 3 个行号。
     """
-    return []
+    text = ctx.text
+    if not text:
+        return []
+    cands = find_dup_candidates(text)
+    if not cands:
+        return []
+    real = _real_notes(ctx)
+    hits = [h for h in cands if dup_key(h["pattern"], h["context"], h["source"]) in real]
+    if not hits:
+        return []
+    groups: dict[str, list[dict]] = {}
+    for h in hits:
+        groups.setdefault(h["pattern"], []).append(h)
+    out: list[Issue] = []
+    for pattern, hs in groups.items():
+        hs.sort(key=lambda x: x["line"])
+        out.append(Issue(
+            rule=RULE_DUP,
+            message=f"重复字：「{pattern}」",       # 不写条数：条数变了不该重新开问题
+            severity="warn",
+            locator={"line": hs[0]["line"], "pattern": pattern,
+                     "lines": [h["line"] for h in hs][:20]},
+            evidence={"hits": hs[:20], "total": len(hs)},
+        ))
+    return out
 
 
 @register("text.zh_in_en", label="英文正文含中文", severity="warn", langs=("en",),
