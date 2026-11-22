@@ -495,15 +495,30 @@ def api_issue_suggest(iid: int):
                          (row["doc_key"],)).fetchone()
     line_text = ""
     md_path = (doc["md_path"] if doc else "") or ""
+    lines: list[str] = []
     if md_path:
         try:
             lines = Path(BASE / md_path).read_text(encoding="utf-8", errors="replace").splitlines()
-            ln = int(loc.get("line") or 0)
-            if 1 <= ln <= len(lines):
-                lo, hi = max(0, ln - 2), min(len(lines), ln + 1)
-                line_text = "\n".join(x.strip() for x in lines[lo:hi] if x.strip())[:600]
         except Exception:  # noqa: BLE001
-            line_text = ""
+            lines = []
+    ln = int(loc.get("line") or 0)
+    if lines and 1 <= ln <= len(lines):
+        lo, hi = max(0, ln - 2), min(len(lines), ln + 1)
+        line_text = "\n".join(x.strip() for x in lines[lo:hi] if x.strip())[:600]
+    if not line_text:
+        # AGC 这类按词命中的规则，locator 里没有行号，行号藏在 evidence.hits 里
+        try:
+            hits = (json.loads(row["evidence"] or "{}").get("hits") or [])[:3]
+        except Exception:  # noqa: BLE001
+            hits = []
+        picks = []
+        for h in hits:
+            hln = int(h.get("line") or 0)
+            if lines and 1 <= hln <= len(lines):
+                picks.append(lines[hln - 1].strip())
+            elif h.get("text"):
+                picks.append(str(h.get("text")).strip())
+        line_text = "\n".join(p for p in picks if p)[:600]
     parts = (row["doc_key"] or "").split("/")
     official = ""
     if len(parts) == 3:
@@ -518,8 +533,9 @@ def api_issue_suggest(iid: int):
         "doc_key": row["doc_key"] or "",
         "doc_url": official,
         "line_text": line_text or "（没有定位到原文行）",
-        "target": loc.get("target") or loc.get("href") or "",
+        "target": loc.get("target") or loc.get("href") or "、".join(loc.get("terms") or []),
         "url": loc.get("url") or loc.get("target") or "",
+        "hint": checks.ai_hint(row["rule"]) or "（无）",
     }
     try:
         import ai

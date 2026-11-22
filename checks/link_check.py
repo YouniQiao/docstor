@@ -260,7 +260,9 @@ def _official():
     return obj
 
 
-@register("link.dead", label="链接失效")
+@register("link.dead", label="链接失效",
+          ai_hint="判断依据是官网页面上该链接是否真的 404；官网已下线的文档，"
+                  "处理方式是改用当前有效路径，或把链接降级为纯文本并保留原文标题，不要凭空造 slug。")
 def check_dead(doc, ctx):
     """站内链接是否指向官网不存在的文档。
 
@@ -388,7 +390,10 @@ def _page_section_ids(ctx, lang: str, section: str, slug: str) -> set[str]:
     return {a for a in (idx.get(slug) or ()) if _SECTION_ID_RE.match(str(a).strip())}
 
 
-@register("link.anchor", label="锚点失效")
+@register("link.anchor", label="锚点失效",
+          ai_hint="锚点来源于目标文档的小标题（GitHub 风格：小写、空格转连字符、去标点）。"
+                  "改法是让 #锚点 与目标文档真实存在的标题一致；目标文档没有对应标题时，"
+                  "改指最近的小节或去掉锚点，不要自己造一个标题 id。")
 def check_anchor(doc, ctx):
     out = []
     seen = set()
@@ -418,7 +423,9 @@ def check_anchor(doc, ctx):
     return out
 
 
-@register("link.vintage", label="指向历史版本")
+@register("link.vintage", label="指向历史版本",
+          ai_hint="链接指向了历史版本目录（如带 3.x/4.x 等旧版本号），应改到当前版本的同名路径；"
+                  "确实需要引用旧版行为时，保留并加一句版本说明。")
 def check_vintage(doc, ctx):
     out = []
     for line_no, target, text, _html in iter_links(ctx.text):
@@ -439,7 +446,9 @@ def check_vintage(doc, ctx):
 REPO_HOST_RE = re.compile(r"^https?://(?:[^/]+\.)?(?:gitcode|github|gitee)\.(?:com|io)/", re.I)
 
 
-@register("link.cross_lang", label="英文文档链到中文", langs=("en",))
+@register("link.cross_lang", label="英文文档链到中文", langs=("en",),
+          ai_hint="英文文档里的链接应指向 /en/ 下的同篇文档，slug 通常与中文一致；"
+                  "英文站确实没有对应文档时，才保留中文链接并在文字上说明。")
 def check_cross_lang(doc, ctx):
     """英文文档里链到中文站的内容。
 

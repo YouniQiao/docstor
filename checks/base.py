@@ -32,23 +32,33 @@ class Issue:
 
 def register(rule: str, label: str, severity: str = "warn",
              langs: tuple[str, ...] = ("cn", "en"), default_on: bool = True,
-             default_visible: bool | None = None):
+             default_visible: bool | None = None, ai_hint: str = ""):
     """注册一个检查项。
 
     default_visible=False 表示新规则默认「调试中」：照常检查、数据入库，
     但不出现在全量问题/导出/订阅日报，只在 /admin 里能看（用 /admin/rule/<rule>）。
+
+    ai_hint：这条规则隐含的领域知识（该改成什么、为什么这么判）。
+    会原样塞进「AI 整改建议」的提示词里——模型不知道的规范就靠它，
+    比如「AGC 现在统一叫 HarmonyOS 中心」。不写就只有问题描述可用。
     """
     def deco(fn):
         REGISTRY[rule] = {"label": label, "severity": severity, "langs": langs,
                           "fn": fn, "default_on": default_on,
                           "default_visible": (default_on if default_visible is None
-                                              else default_visible)}
+                                              else default_visible),
+                          "ai_hint": ai_hint}
         return fn
     return deco
 
 
 def rule_label(rule: str) -> str:
     return REGISTRY.get(rule, {}).get("label", rule)
+
+
+def ai_hint(rule: str) -> str:
+    """规则自带的领域知识，给 AI 整改建议用。"""
+    return REGISTRY.get(rule, {}).get("ai_hint", "")
 
 
 def applicable(rule: str, lang: str) -> bool:
