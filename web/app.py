@@ -350,7 +350,7 @@ def api_issues():
     rows = conn().execute(
         f"""SELECT i.id, i.doc_key, i.lang, i.section, i.rule, i.severity, i.locator, i.message,
                    i.first_seen, i.last_seen, i.status, i.ignored_by, i.ignored_at,
-                   d.url AS doc_url, d.is_api
+                   i.ignore_reason, d.url AS doc_url, d.is_api
             FROM issues i LEFT JOIN docs d ON d.doc_key = i.doc_key
             WHERE {w}
             ORDER BY i.first_seen DESC,
@@ -400,10 +400,68 @@ def api_issue_ignore(iid: int):
         return jsonify({"ok": False, "error": "问题不存在"}), 404
     if row["status"] == "resolved":
         return jsonify({"ok": False, "error": "已解决的问题不能忽略"}), 400
-    _db.set_ignored(iid, by)
+    body = request.get_json(silent=True) or {}
+    reason = (body.get("reason") or "").strip()[:200]
+    _db.set_ignored(iid, by, reason)
     cur = _db.get_issue(iid)
     return jsonify({"ok": True, "id": iid, "status": cur["status"],
-                    "ignored_by": cur["ignored_by"], "ignored_at": cur["ignored_at"]})
+                    "ignored_by": cur["ignored_by"], "ignored_at": cur["ignored_at"],
+                    "ignore_reason": cur["ignore_reason"] or ""})
+
+
+@app.post("/api/issues/<int:iid>/suggest")
+def api_issue_suggest(iid: int):
+    """对单条问题让 AI 给一条整改建议（登录或管理员可用；结果按 fprint 缓存，重复点击不烧 token）。"""
+    if not gcauth.current_user() and not is_admin():
+        return jsonify({"ok": False, "need_login": True, "error": "请先用 GitCode 登录"}), 401
+    row = _db.get_issue(iid)
+    if row is None:
+        return jsonify({"ok": False, "error": "问题不存在"}), 404
+    loc = {}
+    try:
+        loc = json.loads(row["locator"] or "{}")
+    except Exception:  # noqa: BLE001
+        loc = {}
+    doc = conn().execute("SELECT md_path, url, title FROM docs WHERE doc_key=?",
+                         (row["doc_key"],)).fetchone()
+    line_text = ""
+    md_path = (doc["md_path"] if doc else "") or ""
+    if md_path:
+        try:
+            lines = Path(BASE / md_path).read_text(encoding="utf-8", errors="replace").splitlines()
+            ln = int(loc.get("line") or 0)
+            if 1 <= ln <= len(lines):
+                lo, hi = max(0, ln - 2), min(len(lines), ln + 1)
+                line_text = "\n".join(x.strip() for x in lines[lo:hi] if x.strip())[:600]
+        except Exception:  # noqa: BLE001
+            line_text = ""
+    parts = (row["doc_key"] or "").split("/")
+    official = ""
+    if len(parts) == 3:
+        try:
+            official = ds_catalog.url_for(row["lang"], row["section"], parts[-1], budget=1.5)
+        except Exception:  # noqa: BLE001
+            official = ""
+    official = official or (doc["url"] if doc else "") or ""
+    fields = {
+        "rule_label": checks.rule_label(row["rule"]),
+        "message": row["message"] or "",
+        "doc_key": row["doc_key"] or "",
+        "doc_url": official,
+        "line_text": line_text or "（没有定位到原文行）",
+        "target": loc.get("target") or loc.get("href") or "",
+        "url": loc.get("url") or loc.get("target") or "",
+    }
+    try:
+        import ai
+        res = ai.review("fix_suggestion", fields, module="issue", item_key=row["fprint"])
+    except Exception as e:  # noqa: BLE001
+        return jsonify({"ok": False, "error": f"AI 暂不可用：{str(e)[:120]}"}), 503
+    return jsonify({"ok": True, "advice": res.get("advice") or res.get("reason") or "",
+                    "confidence": res.get("confidence"),
+                    "needs_human": bool(res.get("needs_human")),
+                    "snippet": res.get("snippet") or "",
+                    "cached": bool((res.get("_meta") or {}).get("cached"))})
 
 
 @app.post("/api/issues/<int:iid>/unignore")
@@ -420,7 +478,7 @@ EXPORT_COLS = [
     ("问题类型", 18), ("语言", 8), ("板块", 18), ("细分/领域", 22), ("Kit", 24),
     ("文档类别", 10), ("问题描述", 80), ("原文链接文字", 30), ("原文目标地址", 60),
     ("镜像文档", 52), ("官网文档", 52), ("状态", 10), ("识别日期", 12),
-    ("最近发现", 20), ("解决时间", 20), ("忽略人", 16), ("忽略时间", 20),
+    ("最近发现", 20), ("解决时间", 20), ("忽略人", 16), ("忽略时间", 20), ("忽略理由", 24),
     ("严重级别", 10), ("文档标识", 46),
 ]
 
@@ -589,7 +647,7 @@ def _build_export(_key: str):
     rows = conn().execute(
         f"""SELECT i.doc_key, i.lang, i.section, i.rule, i.severity, i.locator, i.message,
                    i.first_seen, i.last_seen, i.status, i.resolved_at,
-                   i.ignored_by, i.ignored_at,
+                   i.ignored_by, i.ignored_at, i.ignore_reason,
                    d.is_api, d.url AS doc_url
             FROM issues i
             LEFT JOIN docs d ON d.doc_key = i.doc_key
@@ -655,6 +713,7 @@ def _build_export(_key: str):
             r["resolved_at"] or "",
             r["ignored_by"] or "",
             r["ignored_at"] or "",
+            r["ignore_reason"] or "",
             {"error": "错误", "warn": "警告", "info": "提示"}.get(r["severity"], r["severity"]),
             doc_key,
         ])
@@ -1277,7 +1336,9 @@ def admin_rule_log(rule: str):
 
 @app.get("/issues")
 def issues_page():
-    return render_template("issues.html", rule_labels={k: v["label"] for k, v in checks.REGISTRY.items()})
+    return render_template("issues.html",
+                           rule_labels={k: v["label"] for k, v in checks.REGISTRY.items()},
+                           is_admin_user=is_admin())
 
 
 # ── 个人中心 / 邮件订阅 ──────────────────────────────────────────

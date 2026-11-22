@@ -131,7 +131,8 @@ class DB:
                               ("docs", "updated_at", "TEXT"),
                               ("docs", "url", "TEXT"),
                               ("issues", "ignored_by", "TEXT"),
-                              ("issues", "ignored_at", "TEXT")]:
+                              ("issues", "ignored_at", "TEXT"),
+                              ("issues", "ignore_reason", "TEXT")]:
             cols = [r[1] for r in self.conn.execute(f"PRAGMA table_info({tbl})")]
             if col not in cols:
                 self.conn.execute(f"ALTER TABLE {tbl} ADD COLUMN {col} {typ}")
@@ -240,18 +241,18 @@ class DB:
         self.conn.commit()
         return False
 
-    def set_ignored(self, issue_id: int, by: str) -> int:
-        """人工忽略一条问题：记谁、什么时候。返回受影响行数。"""
+    def set_ignored(self, issue_id: int, by: str, reason: str = "") -> int:
+        """人工忽略一条问题：记谁、什么时候、为什么（理由最多 200 字）。"""
         cur = self.conn.execute(
-            "UPDATE issues SET status='ignored', ignored_by=?, ignored_at=?, resolved_at=NULL "
-            "WHERE id=?", (by, now(), issue_id))
+            "UPDATE issues SET status='ignored', ignored_by=?, ignored_at=?, ignore_reason=?, "
+            "resolved_at=NULL WHERE id=?", (by, now(), (reason or "").strip()[:200], issue_id))
         self.conn.commit()
         return cur.rowcount
 
     def clear_ignored(self, issue_id: int) -> int:
         """取消忽略，回到未解决（清掉忽略人与时间）。"""
         cur = self.conn.execute(
-            "UPDATE issues SET status='open', ignored_by=NULL, ignored_at=NULL "
+            "UPDATE issues SET status='open', ignored_by=NULL, ignored_at=NULL, ignore_reason=NULL "
             "WHERE id=? AND status='ignored'", (issue_id,))
         self.conn.commit()
         return cur.rowcount

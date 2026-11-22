@@ -83,8 +83,9 @@ def review(rubric: str, fields: dict, images: list[str] | None = None, *,
             out["_meta"] = {"cached": True, "model": model, "prompt_version": pver, "tokens": 0}
             return out
 
-    user_txt = spec["user"].format(**{k: (fields.get(k) or "") for k in
-                                      ("doc_url", "doc_title", "ocr_text", "han", "ratio")})
+    _f = {k: ("" if v is None else str(v)) for k, v in (fields or {}).items()}
+    from collections import defaultdict
+    user_txt = spec["user"].format_map(defaultdict(str, _f))
     content: list = [{"type": "text", "text": user_txt}]
     for p in (images or []):
         content.append(_img_part(str(p)))
@@ -102,6 +103,12 @@ def review(rubric: str, fields: dict, images: list[str] | None = None, *,
            "confidence": raw.get("confidence"),
            "reason": (raw.get("reason") or "").strip()[:400],
            "suggestion": (raw.get("suggestion") or "").strip()[:200]}
+    # 不同 rubric 的额外字段（如 fix_suggestion 的 advice / needs_human / snippet）原样带上
+    for k, v in raw.items():
+        if k in out or k in ("verdict", "confidence", "reason", "suggestion"):
+            continue
+        if isinstance(v, (str, int, float, bool)) or v is None:
+            out[k] = (v[:1200] if isinstance(v, str) else v)
     tin = int(usage.get("prompt_tokens", 0) or 0)
     tout = int(usage.get("completion_tokens", 0) or 0)
     if use_cache:

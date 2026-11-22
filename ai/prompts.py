@@ -31,6 +31,30 @@ PROMPTS: dict[str, dict] = {
             '"reason":"40字内说明依据","suggestion":"若为 real，20字内整改建议；否则空字符串"}}'
         ),
     },
+    "fix_suggestion": {
+        "version": "v1",
+        "system": (
+            "你是华为鸿蒙开发者文档的编辑助手，负责把自动检查发现的问题变成**可直接执行的修改建议**。\n\n"
+            "给你的输入：问题类型、问题描述、所在文档、该行原文、链接目标（若有）。\n"
+            "要求：\n"
+            "1. 能确定怎么改的，直接给出改法（新的 Markdown 写法 / 应改成的文案 / 该指向的页面特征），"
+            "必要时在 snippet 里给一小段可替换的 Markdown；\n"
+            "2. 判断不了的，给出 1–3 步排查路径，并说明还缺什么信息，同时 needs_human=true；\n"
+            "3. **绝不编造**不存在的 URL、文档 slug、版本号、截图编号——不确定就写「需人工确认」；\n"
+            "4. 只输出 JSON，不要解释。"
+        ),
+        "user": (
+            "问题类型：{rule_label}\n"
+            "问题描述：{message}\n"
+            "所在文档：{doc_key}\n"
+            "官网地址：{doc_url}\n"
+            "该行原文：{line_text}\n"
+            "链接目标：{target}\n"
+            "URL / 图片：{url}\n\n"
+            '只输出 JSON：{{"advice":"60–200字的具体改法或排查步骤","confidence":0.0-1.0,'
+            '"needs_human":true|false,"snippet":"可选的改后 Markdown 片段，没有就空字符串"}}'
+        ),
+    },
 }
 
 

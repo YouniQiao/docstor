@@ -402,7 +402,8 @@
         <table class="cache ait ut">
           <thead><tr>
             <th style="width:150px">忽略时间</th><th style="width:110px">忽略人</th>
-            <th style="width:130px">问题类型</th><th style="width:240px">文档</th><th>问题</th>
+            <th style="width:130px">问题类型</th><th style="width:240px">文档</th>
+            <th style="width:150px">理由</th><th>问题</th>
           </tr></thead>
           <tbody id="g-body">
             <tr><td colspan="5" class="muted" style="text-align:center;padding:18px">加载中…</td></tr>
@@ -600,8 +601,9 @@ function renderUserDetail(u) {
       <td class="muted" title="${esc(l.ua)}">${esc((l.ua || '').slice(0, 46))}</td></tr>`).join('')
     || '<tr><td colspan="3" class="muted">没有登录记录（本期开始记录）</td></tr>';
   const ign = (u.ignores || []).map(g => `<tr><td class="mono">${esc(g.ignored_at || '')}</td>
-      <td>${esc(g.rule)}</td><td class="muted">${esc(g.doc_key)}</td></tr>`).join('')
-    || '<tr><td colspan="3" class="muted">没有忽略记录</td></tr>';
+      <td>${esc(g.rule)}</td><td class="muted">${esc(g.doc_key)}</td>
+      <td>${g.ignore_reason ? esc(g.ignore_reason) : '<span class="muted">—</span>'}</td></tr>`).join('')
+    || '<tr><td colspan="4" class="muted">没有忽略记录</td></tr>';
   return `<div class="ud">
     <div class="udh">${esc(u.login)} · ${esc(u.name || '—')}
       <span class="muted" style="font-weight:400">${esc(u.email_masked || '未绑定邮箱')}</span>
@@ -618,7 +620,7 @@ function renderUserDetail(u) {
       <div class="udc"><h4>最近登录</h4>
         <table><thead><tr><th>时间</th><th>IP</th><th>UA</th></tr></thead><tbody>${logins}</tbody></table></div>
       <div class="udc"><h4>忽略记录</h4>
-        <table><thead><tr><th>时间</th><th>类型</th><th>文档</th></tr></thead><tbody>${ign}</tbody></table></div>
+        <table><thead><tr><th>时间</th><th>类型</th><th>文档</th><th>理由</th></tr></thead><tbody>${ign}</tbody></table></div>
     </div></div>`;
 }
 
@@ -691,8 +693,9 @@ function renderIgnores(L) {
   document.getElementById('g-body').innerHTML = rows.length ? rows.map(g => `<tr>
       <td class="mono">${esc(g.ignored_at || '')}</td><td><b>${esc(g.ignored_by)}</b></td>
       <td>${esc(g.rule)}</td><td class="muted">${esc(g.doc_key)}</td>
+      <td>${g.ignore_reason ? esc(g.ignore_reason) : '<span class="muted">—</span>'}</td>
       <td class="muted">${esc((g.message || '').slice(0, 90))}</td></tr>`).join('')
-    : '<tr><td colspan="5" class="muted" style="text-align:center;padding:18px">还没有忽略操作</td></tr>';
+    : '<tr><td colspan="6" class="muted" style="text-align:center;padding:18px">还没有忽略操作</td></tr>';
   document.getElementById('g-pginfo').textContent = `第 ${(L.page || 0) + 1} / ${L.pages || 1} 页 · 共 ${fmtN(L.total)} 条`;
   document.getElementById('g-prev').disabled = !L.page;
   document.getElementById('g-next').disabled = (L.page + 1) >= (L.pages || 1);

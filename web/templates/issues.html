@@ -69,13 +69,49 @@
     .flabel{position:static;transform:none;width:100%;margin-bottom:2px}
     input[type=text],select{max-width:100%}
     input[type=text]{min-width:0}
-    #list table{min-width:0;font-size:12.5px}
-    th,td{padding:8px 8px}
-    #list th.c-type{width:96px}
-    #list th.c-doc{width:60px} #list th.c-off{width:64px}
-    #list th.c-date,#list td.c-date{display:none}
+    /* 窄屏：表格改成卡片，一行一条，标签在左、内容在右 */
+    #list{overflow-x:visible}
+    #list table,#list thead,#list tbody,#list tr,#list td{display:block;width:auto;min-width:0}
+    #list thead{display:none}
+    #list tbody tr{border:1px solid var(--border);border-radius:10px;background:#fff;
+      margin:0 0 10px;padding:6px 0;box-shadow:0 1px 2px rgba(16,24,40,.04)}
+    #list td{border:none;padding:5px 12px;display:flex;gap:8px;align-items:flex-start}
+    #list td::before{content:attr(data-l);flex:0 0 62px;color:var(--muted);font-size:11.5px;line-height:1.7}
+    #list td.msg{display:block;padding-top:2px}
+    #list td.msg::before{display:none}
+    #list td.type::before{display:none}
+    #list td.type{padding-bottom:0}
+    #list td.c-op{border-top:1px dashed #eef1f5;margin-top:4px;padding-top:8px;justify-content:flex-end}
+    #list td.c-op::before{display:none}
+    #list td.c-op .mini2{width:100%;padding:7px 0;font-size:13px}
+    #list td.off,#list td.doc{max-width:none}
+    #list td.c-date{display:flex}
     .tag{white-space:normal;line-height:1.35}
+    .pager{flex-wrap:wrap}
   }
+  .airow{display:flex;gap:8px;align-items:center;margin-top:8px}
+  .aiout{margin-top:6px;background:#f7f9fc;border:1px solid var(--border);border-radius:8px;
+    padding:9px 11px;font-size:12.5px;color:#39414d;line-height:1.75;white-space:pre-wrap;word-break:break-word}
+  .aiout .aihdr{color:var(--muted);font-size:11.5px;margin-bottom:4px;white-space:normal}
+  .aiout .aicode{margin-top:6px;background:#eef2f7;border-radius:6px;padding:6px 8px;font-family:ui-monospace,Menlo,monospace;
+    font-size:12px;white-space:pre-wrap;word-break:break-word}
+  .imask{position:fixed;inset:0;background:rgba(16,24,40,.38);display:flex;align-items:center;
+    justify-content:center;z-index:120;padding:16px}
+  .imask[hidden]{display:none}
+  .ibox{background:#fff;border-radius:12px;box-shadow:0 18px 48px rgba(16,24,40,.22);
+    width:min(460px,100%);padding:18px 20px 16px}
+  .ittl{font-size:15px;font-weight:600;color:#1f2430}
+  .isub{color:var(--muted);font-size:12.5px;margin:6px 0 12px;line-height:1.6;word-break:break-all}
+  .ichips{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px}
+  .ichips button{border:1px solid var(--border);background:#f7f9fc;color:#39414d;border-radius:999px;
+    padding:6px 12px;font-size:12.5px;cursor:pointer}
+  .ichips button:hover{border-color:var(--accent);color:var(--accent);background:#f2f8ff}
+  #imtext{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid var(--border);
+    border-radius:8px;font-size:13px}
+  .iacts{display:flex;justify-content:flex-end;gap:10px;margin-top:14px}
+  .mini2.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  .mini2.primary:hover{filter:brightness(1.06)}
+  .inote{color:var(--muted);font-size:11.5px;margin-top:10px;line-height:1.6}
   .c-op{width:64px;text-align:center}
   .mini2{border:1px solid var(--border);background:#fff;border-radius:6px;padding:2px 8px;
          font-size:12px;color:#5a6472;cursor:pointer;white-space:nowrap}
@@ -221,18 +257,100 @@ function opCell(it){
 
 const ITEMS = {};   // 本页的问题，按 id 存一份，确认框里用来显示「忽略的是哪一条」
 
-async function issueAct(kind, id){
+/* ── AI 整改建议（点开才调用，结果按问题指纹缓存） ── */
+function aiRow(it){
+  if (it.status === 'resolved') return '';
+  if (!ME.user && !IS_ADMIN) return '';          // 未登录不给按钮，避免匿名烧 token
+  return `<div class="airow"><button class="mini2" data-ai="${it.id}">AI 建议</button>
+    <span class="meta" id="aist-${it.id}"></span></div>
+    <div class="aiout" id="aiout-${it.id}" hidden></div>`;
+}
+async function loadAdvice(id, btn){
+  const box = document.getElementById('aiout-' + id);
+  const st = document.getElementById('aist-' + id);
+  if (!box) return;
+  if (!box.hidden){ box.hidden = true; return; }
+  if (box.dataset.done){ box.hidden = false; return; }
+  if (btn) btn.disabled = true;
+  if (st) st.textContent = '生成中…';
+  try {
+    const r = await fetch(`/api/issues/${id}/suggest`, {method: 'POST'});
+    let d = {};
+    try { d = await r.json(); } catch(e){}
+    if (!r.ok){
+      if (st) st.textContent = '';
+      if (d.need_login){ alert('请先用 GitCode 登录'); location.href = '/auth/login'; return; }
+      alert(d.error || '生成失败'); return;
+    }
+    const conf = d.confidence != null ? Math.round(d.confidence * 100) + '%' : '—';
+    box.innerHTML = `<div class="aihdr">AI 建议 · 置信度 ${conf}`
+      + (d.needs_human ? ' · 建议人工确认' : '') + (d.cached ? ' · 缓存结果' : '')
+      + ' · 仅供参考，请以官网与规范为准</div>'
+      + esc(d.advice || '')
+      + (d.snippet ? `<div class="aicode">${esc(d.snippet)}</div>` : '');
+    box.dataset.done = '1';
+    box.hidden = false;
+    if (st) st.textContent = '';
+  } catch(e){
+    if (st) st.textContent = '';
+    alert('生成失败：' + e.message);
+  } finally { if (btn) btn.disabled = false; }
+}
+
+/* ── 忽略：先选/写一个理由，再提交 ── */
+let IGNORING = null;
+function openIgnore(id){
   const it = ITEMS[id] || {};
-  if (kind === 'ignore'){
-    const label = it.rule_label || '这条问题';
-    const doc = it.doc_key || '';
-    const ok = confirm(
-      `忽略这条「${label}」问题？\n\n`
-      + `${doc ? doc + '\n' : ''}`
-      + '忽略后它不再出现在全量问题、导出和订阅日报里，\n'
-      + '之后可以在「问题状态 = 已忽略」里恢复。');
-    if (!ok) return;
+  IGNORING = id;
+  document.getElementById('imsub').textContent =
+    (it.rule_label || '') + (it.doc_key ? ' · ' + it.doc_key : '');
+  document.getElementById('imtext').value = '';
+  document.getElementById('imask').hidden = false;
+  setTimeout(() => document.getElementById('imtext').focus(), 30);
+}
+function closeIgnore(){
+  document.getElementById('imask').hidden = true;
+  IGNORING = null;
+}
+async function submitIgnore(reason){
+  if (!IGNORING) return;
+  const id = IGNORING;
+  closeIgnore();
+  const r = await fetch(`/api/issues/${id}/ignore`, {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({reason: (reason || '').trim()})
+  });
+  let d = {};
+  try { d = await r.json(); } catch(e){}
+  if (!r.ok){
+    if (d.need_login){ alert('请先用 GitCode 登录'); location.href = '/auth/login'; return; }
+    alert(d.error || '操作失败'); return;
   }
+  await loadFacets(); loadList();
+}
+/* 弹窗的 DOM 在本脚本之后，绑定要等 DOM 就绪（否则 getElementById 拿到 null，整段脚本中断） */
+function wireIgnoreModal(){
+  const chips = document.getElementById('imchips');
+  if (!chips || chips.dataset.wired) return;
+  chips.dataset.wired = '1';
+  chips.addEventListener('click', e => {
+    const b = e.target.closest('button[data-r]');
+    if (b) submitIgnore(b.dataset.r);
+  });
+  document.getElementById('imok').onclick = () => submitIgnore(document.getElementById('imtext').value);
+  document.getElementById('imcancel').onclick = closeIgnore;
+  document.getElementById('imask').addEventListener('click', e => { if (e.target.id === 'imask') closeIgnore(); });
+  document.getElementById('imtext').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); submitIgnore(e.target.value); }
+    if (e.key === 'Escape') closeIgnore();
+  });
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && IGNORING) closeIgnore(); });
+}
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wireIgnoreModal);
+else wireIgnoreModal();
+
+async function issueAct(kind, id){
+  if (kind === 'ignore'){ openIgnore(id); return; }   // 忽略要先填理由
   const r = await fetch(`/api/issues/${id}/${kind}`, {method: 'POST'});
   let d = {};
   try { d = await r.json(); } catch(e){}
@@ -244,6 +362,8 @@ async function issueAct(kind, id){
 }
 
 document.getElementById('list').addEventListener('click', e => {
+  const ai = e.target.closest('button[data-ai]');
+  if (ai){ if (!ai.disabled) loadAdvice(ai.dataset.ai, ai); return; }
   const b = e.target.closest('button[data-act]');
   if (!b || b.disabled) return;
   b.disabled = true;
@@ -450,17 +570,17 @@ async function loadList(){
         const [lang,section,slug] = it.doc_key.split('/');
         const frag = it.anchorId ? '#' + encodeURIComponent(it.anchorId) : '';
         return `<tr>
-          <td class="type"><span class="tag" title="${esc(it.rule_label)}">${esc(it.rule_label)}</span></td>
-          <td class="msg">${msgOf(it)}${extraOf(it, lang, section)}${it.status === 'ignored'
-              ? `<div class="meta">已忽略：${esc(it.ignored_by || '—')} · ${esc((it.ignored_at || '').slice(0, 16))}</div>` : ''}</td>
-          <td class="doc"><a href="/#/${lang}/${section}/${slug}${frag}" target="_blank" rel="noopener"
+          <td class="type" data-l="类型"><span class="tag" title="${esc(it.rule_label)}">${esc(it.rule_label)}</span></td>
+          <td class="msg" data-l="问题">${msgOf(it)}${extraOf(it, lang, section)}${it.status === 'ignored'
+              ? `<div class="meta">已忽略：${esc(it.ignored_by || '—')} · ${esc((it.ignored_at || '').slice(0, 16))}${it.ignore_reason ? ' · 理由：' + esc(it.ignore_reason) : ''}</div>` : ''}${aiRow(it)}</td>
+          <td class="doc" data-l="镜像文档"><a href="/#/${lang}/${section}/${slug}${frag}" target="_blank" rel="noopener"
                  title="${esc(lang + '/' + section + '/' + slug)}">链接</a></td>
-          <td class="off">${it.official_url
+          <td class="off" data-l="官网文档">${it.official_url
               ? `<a href="${esc(it.official_url)}" target="_blank" rel="noopener noreferrer" title="${esc(it.official_url)}">链接</a>`
               : (it.official_gone ? '<span class="meta" title="官网已查不到这篇">已下架</span>'
                                   : '<span class="meta">—</span>')}</td>
-          <td class="meta c-date" title="${esc(it.first_seen||'')}">${esc((it.first_seen||'').slice(5,16))}</td>
-          <td class="c-op">${opCell(it)}</td>
+          <td class="meta c-date" data-l="识别日期" title="${esc(it.first_seen||'')}">${esc((it.first_seen||'').slice(5,16))}</td>
+          <td class="c-op" data-l="操作">${opCell(it)}</td>
         </tr>`;
       }).join('') + '</tbody></table>';
   }
@@ -604,5 +724,25 @@ loadMe().then(loadFacets)
                   document.getElementById('f-rule').value = PREVIEW.rule; })
   .then(applyQuery).then(loadList);
 </script>
+
+<!-- 忽略理由：预设点一下就直接忽略，也可以自己写一句 -->
+<div class="imask" id="imask" hidden>
+  <div class="ibox" role="dialog" aria-modal="true" aria-labelledby="imttl">
+    <div class="ittl" id="imttl">忽略这条问题</div>
+    <div class="isub" id="imsub"></div>
+    <div class="ichips" id="imchips">
+      <button type="button" data-r="已修复，待官网更新">已修复，待官网更新</button>
+      <button type="button" data-r="官网有意为之">官网有意为之</button>
+      <button type="button" data-r="误报">误报</button>
+      <button type="button" data-r="转研发处理">转研发处理</button>
+    </div>
+    <input type="text" id="imtext" placeholder="或者自己写一句理由（最多 120 字）" maxlength="120">
+    <div class="iacts">
+      <button type="button" class="mini2" id="imcancel">取消</button>
+      <button type="button" class="mini2 primary" id="imok">确定忽略</button>
+    </div>
+    <div class="inote">忽略后不再出现在全量问题、导出和订阅日报里，可在「问题状态 = 已忽略」里恢复。</div>
+  </div>
+</div>
 </body>
 </html>

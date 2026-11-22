@@ -178,7 +178,7 @@ def user_detail(conn: sqlite3.Connection, login: str, describe=None, section_nam
         "SELECT sent_at,email,groups,issues,new_today,ok,error FROM sub_sends "
         "WHERE login=? ORDER BY id DESC LIMIT 10", (login,))]
     ignores = [dict(r) for r in conn.execute(
-        "SELECT id,rule,doc_key,message,ignored_at FROM issues "
+        "SELECT id,rule,doc_key,message,ignored_at,ignore_reason FROM issues "
         "WHERE ignored_by=? ORDER BY ignored_at DESC LIMIT 10", (login,))]
     logins = [dict(r) for r in conn.execute(
         "SELECT ts,ip,ua FROM user_login WHERE login=? ORDER BY id DESC LIMIT 10", (login,))]
@@ -216,7 +216,8 @@ def ignores_page(conn: sqlite3.Connection, page: int = 0, size: int = 20, q: str
     total = conn.execute("SELECT COUNT(*) n FROM issues i WHERE i.ignored_by IS NOT NULL "
                          f"AND i.ignored_by<>''{where}", args).fetchone()["n"]
     rows = conn.execute(
-        "SELECT i.id,i.rule,i.doc_key,i.message,i.ignored_by,i.ignored_at,i.lang,i.section "
+        "SELECT i.id,i.rule,i.doc_key,i.message,i.ignored_by,i.ignored_at,i.ignore_reason,"
+        "       i.lang,i.section "
         f"FROM issues i WHERE i.ignored_by IS NOT NULL AND i.ignored_by<>''{where} "
         "ORDER BY i.ignored_at DESC LIMIT ? OFFSET ?", args + [size, page * size]).fetchall()
     return {"rows": [dict(r) for r in rows], "total": total, "page": page, "size": size,
