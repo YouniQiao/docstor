@@ -322,7 +322,9 @@ def check_dead(doc, ctx):
 IMG_EXT = (".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg", ".bmp")
 
 
-@register("link.external", label="外链失效")
+@register("link.external", label="外链失效",
+          ai_hint="外链指向站外资源（GitHub / Gitee / 第三方站点），失效多半是仓库改名、分支变更或站点下线。"
+                  "改法是换成当前有效地址；找不到就降级为纯文本并说明来源，不要指向镜像或无关页面。")
 def check_external(doc, ctx):
     """正文里的第三方 http(s) 链接：404/410 报失效，403/超时只报不可达。"""
     import ds_http

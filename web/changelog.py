@@ -33,7 +33,7 @@ ENTRIES = [
         "date": "2026-11-20",
         "kind": "新增规则",
         "title": "AGC 名称残留（仅中文文档）",
-        "detail": "老文档里残留的历史应用名，正文中的 AGC / AppGallery Connect 应统一改为「HarmonyOS 中心」，266 篇存量。",
+        "detail": "老文档里残留的历史应用名，正文中的 AGC / AppGallery Connect 应统一改为「HarmonyOS 开发者中心」，266 篇存量。",
         "rule": "special.agc_name",
     },
     {

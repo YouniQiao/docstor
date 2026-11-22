@@ -67,6 +67,9 @@ def _line_of(newlines: list[int], off: int) -> int:
 
 
 @register(RULE, label="英文图片含中文", severity="warn", langs=("en",),
+          ai_hint="英文文档里的截图含中文界面或文案，改法是换成英文版截图并更新文件名与 alt 文案；"
+                  "若中文属于地图地名、农历日历、品牌并列或用户数据，则不算问题。"
+                  "图片不在你手上，只说清该不该换、该换成什么场景，不要编造新文件名。",
           default_on=True, default_visible=False)
 def check_image_zh_in_en(doc, ctx):
     out: list[Issue] = []

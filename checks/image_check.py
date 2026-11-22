@@ -83,6 +83,9 @@ def _line_of(newlines: list[int], offset: int) -> int:
 
 
 @register("image.missing", label="图片缺失", severity="error",
+          ai_hint="引用的图片取不到。先看官网页面本身能否显示：官网正常说明是镜像抓取的问题，文档不用改；"
+                  "官网也不显示才是文档的问题，改法是修正相对路径（同目录 images/xxx.png）或换成官网可访问的图，"
+                  "文件名不能凭空编造。",
           langs=("cn", "en"), default_visible=False)
 def check_image_missing(doc, ctx):
     """返回图片引用不可用的位置（同篇同目标同类型只报一次）。"""

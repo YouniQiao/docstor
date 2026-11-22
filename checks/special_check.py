@@ -44,8 +44,8 @@ MAX_HITS = 40
 
 
 @register("special.agc_name", label="AGC名称排查", severity="warn", default_visible=False,
-          ai_hint=("AppGallery Connect / AGConnect / AGC 是同一事物的旧称，现已统一改称「HarmonyOS 中心」。"
-                   "正文中的这些名称应改为「HarmonyOS 中心」；"
+          ai_hint=("AppGallery Connect / AGConnect / AGC 是同一事物的旧称，现已统一改称「HarmonyOS 开发者中心」。"
+                   "正文中的这些名称应改为「HarmonyOS 开发者中心」；"
                    "但包名（com.huawei.agconnect）、文件名（agconnect-services.json）、"
                    "文档 id（agc-help-xxx）、域名与邮箱等标识符不能改。"
                    "音频语境里的 AGC（自动增益控制）不在此列。"))
@@ -83,7 +83,7 @@ def check_agc_name(doc, ctx):
     # 所以措辞变了才重新记一条，不会每天因为「命中 3 处变 4 处」反复新增/解决。
     return [Issue(
         rule="special.agc_name",
-        message="页面出现 AGC 相关名称（应统一改为「HarmonyOS 中心」）：" + "、".join(terms),
+        message="页面出现 AGC 相关名称（应统一改为「HarmonyOS 开发者中心」）：" + "、".join(terms),
         severity="warn",
         locator={"terms": terms},
         anchor_text="",
