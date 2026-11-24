@@ -296,7 +296,9 @@ const EMAIL_STATE = {{ email_state|tojson }};
       const r = await fetch('/api/subs/preview?' + new URLSearchParams(p));
       const d = await r.json();
       $('a-preview').innerHTML = d.ok
-        ? `当前 <b>${d.total.toLocaleString()}</b> 条问题（今日新增 ${d.new}）`
+        ? (d.total > 0
+            ? `当前 <b>${d.total.toLocaleString()}</b> 条问题（今日新增 ${d.new}）`
+            : '当前 <b>0</b> 条问题，也可以关注（以后出现会照常统计）')
         : '条件不合法';
     } catch(e){ $('a-preview').textContent = '预览失败'; }
   }
@@ -328,7 +330,8 @@ const EMAIL_STATE = {{ email_state|tojson }};
       body: JSON.stringify({params: p, label: qs('a-label').value})});
     const d = await r.json();
     if (!d.ok){ toast(d.error || '添加失败'); return; }
-    toast('已添加'); setTimeout(()=>location.reload(), 500);
+    toast(d.total > 0 ? '已添加' : '已添加（当前 0 条，以后出现会统计）');
+    setTimeout(()=>location.reload(), 800);
   });
 
   document.querySelectorAll('tr[data-id]').forEach(tr => {

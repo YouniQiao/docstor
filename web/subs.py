@@ -167,7 +167,8 @@ def register(app, db_path: str, where_fn, section_names: dict, rule_label, site_
         conn = db()
         try:
             row = _user_row(conn, u["login"])
-            subs = _subs_of(conn, u["login"]) if row else []
+            # 关注范围不需要先绑邮箱：没绑邮箱照样能建、能看，只是收不到日报
+            subs = _subs_of(conn, u["login"])
             last = conn.execute(
                 "SELECT sent_at, ok FROM sub_sends WHERE login=? ORDER BY id DESC LIMIT 1",
                 (u["login"],)).fetchone()
@@ -349,9 +350,7 @@ def register(app, db_path: str, where_fn, section_names: dict, rule_label, site_
                   ("lang", "section", "kind", "sub", "domain", "kit", "rule", "status", "q") and v}
         params.setdefault("status", "open")
         query = urlencode(params)
-        total = _count(params)
-        if total <= 0:
-            return jsonify({"ok": False, "error": "这个关注范围下没有问题，不用关注"}), 400
+        total = _count(params)      # 0 条也允许建：以后真出现问题时照常统计、照常发信
         label = (data.get("label") or "").strip() or describe(params, section_names, rule_label)
         conn = db()
         try:
