@@ -26,6 +26,7 @@ import auth as gcauth  # noqa: E402  GitCode 登录（web/auth.py）
 import issueq  # noqa: E402  筛选条件构造（列表/导出/订阅共用）
 import subs as subcenter  # noqa: E402  个人中心 + 邮件订阅
 import users as usermgr  # noqa: E402  站点管理 · 用户管理
+import feedback as fbcenter  # noqa: E402  问题反馈（公开列表 + 邮件通知）
 import ds_catalog
 import ds_db  # noqa: E402
 import ds_alias  # noqa: E402
@@ -99,7 +100,7 @@ def _csrf_reject(msg: str):
     return (f"<div style='font:15px/1.8 system-ui;padding:60px;text-align:center'>"
             f"<h2 style='margin:0 0 8px'>请求被拒绝</h2>"
             f"<p style='color:#777'>{msg}</p>"
-            f"<p><a href='/issues'>← 回到全量问题</a></p></div>", 403)
+            f"<p><a href='/issues'>← 回到已识别问题</a></p></div>", 403)
 
 
 @app.before_request
@@ -165,13 +166,17 @@ def _unhandled(e):  # noqa: ANN001
     return ("<div style='font:15px/1.8 system-ui;padding:60px;text-align:center'>"
             "<h2 style='margin:0 0 8px'>服务器内部错误</h2>"
             "<p style='color:#777'>请稍后重试；如果一直这样，把访问的地址告诉管理员。</p>"
-            "<p><a href='/issues'>← 回到全量问题</a></p></div>", 500)
+            "<p><a href='/issues'>← 回到已识别问题</a></p></div>", 500)
 
 gcauth.init_app(app)
 
 _db = ds_db.DB(str(DB_PATH))
 ds_rules.ensure(_db.conn, checks.REGISTRY)
 usermgr.ensure_schema(_db.conn)
+try:                                  # 问题反馈表
+    fbcenter.ensure_schema(_db.conn)
+except Exception as _e:  # noqa: BLE001
+    app.logger.warning("问题反馈表初始化失败: %s", _e)
 try:                                  # AI 三张表（含 ai_usage_log.actor 补列）
     from ai.cache import ensure_schema as _ai_ensure
     _ai_ensure()
@@ -714,7 +719,7 @@ def _send_xlsx(data: bytes):
     import io
     from datetime import datetime
     return send_file(io.BytesIO(data), as_attachment=True,
-                     download_name=f"全量问题_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
+                     download_name=f"已识别问题_{datetime.now().strftime('%Y%m%d_%H%M')}.xlsx",
                      mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
@@ -746,7 +751,7 @@ def _build_export(_key: str):
 
     wb = Workbook()
     ws = wb.active
-    ws.title = "全量问题"
+    ws.title = "已识别问题"
     head_font = Font(bold=True, color="FFFFFF")
     head_fill = PatternFill("solid", fgColor="4C6EF5")
     for i, (name, width) in enumerate(EXPORT_COLS, 1):
@@ -1462,6 +1467,15 @@ def issues_page():
 
 # ── 个人中心 / 邮件订阅 ──────────────────────────────────────────
 SITE_URL = os.environ.get("DOCSTOR_SITE_URL") or "https://docstor.openharmony.cool"
+
+# ── 问题反馈（公开列表 + 邮件通知维护者）──────────────────────────
+FEEDBACK_NOTIFY = os.environ.get("DOCSTOR_FEEDBACK_TO") or "sunxianlei@huawei.com"
+_FB_KEY = (_ENV.get("SECRET_KEY") or "docstor-feedback").encode("utf-8")
+try:
+    fbcenter.register(app, str(DB_PATH), SITE_URL, FEEDBACK_NOTIFY,
+                      BASE / "logs" / "feedback.log", _FB_KEY)
+except Exception as e:  # noqa: BLE001  反馈页起不来不能拖垮主站
+    app.logger.warning("问题反馈模块初始化失败: %s", e)
 try:
     subcenter.ensure_schema(_db.conn)
     subcenter.register(

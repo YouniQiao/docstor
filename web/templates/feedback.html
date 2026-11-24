@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>问题反馈 · 鸿蒙开发者文档</title>
+<style>
+  :root{--accent:#2f6fed;--accent-weak:#eaf1ff;--border:#e6e8eb;--muted:#6b7280;--danger:#d94a4a;--warn:#b3761f}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Microsoft YaHei",Segoe UI,sans-serif;color:#1f2430;background:#f7f8fa}
+  .wrap{max-width:1180px;margin:18px auto;padding:0 20px 70px}
+  .phead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin:2px 0 14px}
+  .phead h1{font-size:19px;margin:0}
+  .phead .sub{color:var(--muted);font-size:13px;line-height:1.7;max-width:640px}
+  .layout{display:grid;grid-template-columns:360px minmax(0,1fr);gap:16px;align-items:start}
+  .panel{background:#fff;border:1px solid var(--border);border-radius:12px}
+  .form-panel{padding:16px;position:sticky;top:70px}
+  .form-panel h2,.list-head h2{font-size:14px;margin:0 0 12px;font-weight:600}
+  .field{margin-bottom:12px}
+  .field .lb{display:block;font-size:12.5px;color:#4b5563;margin-bottom:6px;font-weight:600}
+  .field .hint{font-size:12px;color:#9aa3b2;font-weight:400;margin-left:4px}
+  .pills{display:flex;gap:6px;flex-wrap:wrap}
+  .pill{border:1px solid var(--border);background:#fff;border-radius:999px;padding:5px 12px;font-size:13px;
+    color:#4b5563;cursor:pointer;user-select:none}
+  .pill:hover{border-color:var(--accent);color:var(--accent)}
+  .pill.on{background:var(--accent-weak);border-color:#bcd2ff;color:var(--accent);font-weight:600}
+  input[type=text],textarea{width:100%;border:1px solid var(--border);border-radius:8px;padding:8px 10px;
+    font-size:13.5px;font-family:inherit;color:#1f2430;background:#fff}
+  input[type=text]:focus,textarea:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(47,111,237,.10)}
+  textarea{min-height:132px;resize:vertical;line-height:1.65}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .counter{text-align:right;font-size:11.5px;color:#9aa3b2;margin-top:4px}
+  .counter.over{color:var(--danger)}
+  button{border:1px solid var(--border);background:#fff;border-radius:8px;padding:7px 13px;font-size:13px;
+    cursor:pointer;color:#1f2430;font-family:inherit}
+  button:hover{border-color:var(--accent);color:var(--accent)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  button.primary:hover{filter:brightness(1.06);color:#fff}
+  button:disabled{opacity:.55;cursor:not-allowed}
+  #fb-submit{width:100%;padding:10px;font-size:14px;margin-top:2px}
+  .tips{font-size:12px;color:#9aa3b2;line-height:1.7;margin-top:10px}
+  .tips b{color:#6b7280;font-weight:600}
+  .okbox{display:none;border:1px solid #cfe6d3;background:#f2fbf4;border-radius:10px;padding:14px}
+  .okbox h3{margin:0 0 6px;font-size:14px;color:#22693a}
+  .okbox p{margin:0 0 10px;font-size:13px;color:#3c6b4b}
+  .loginbox{padding:6px 0 2px}
+  .loginbox p{margin:0 0 12px;font-size:13px;color:#4b5563;line-height:1.7}
+  .loginbtn{display:block;text-align:center;background:var(--accent);color:#fff;text-decoration:none;
+    font-weight:600;font-size:14px;padding:10px;border-radius:9px}
+  .loginbtn:hover{filter:brightness(1.06)}
+  .mine{display:inline-block;font-size:11px;padding:1px 6px;border-radius:5px;background:#eaf1ff;color:#2f6fed}
+  .list-panel{padding:14px 16px 16px}
+  .list-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
+  .list-head h2{margin:0}
+  .list-head .sp{flex:1}
+  .stat{font-size:12.5px;color:var(--muted)}
+  .stat b{color:#1f2430;font-size:13.5px}
+  .filters{display:flex;gap:14px;flex-wrap:wrap;align-items:center;padding:9px 0 11px;border-bottom:1px solid #f2f3f5;margin-bottom:2px}
+  .filters .grp{display:flex;gap:6px;align-items:center}
+  .filters .glb{font-size:12px;color:#9aa3b2;margin-right:2px}
+  .fpill{border:1px solid transparent;background:#f5f7fb;border-radius:7px;padding:4px 10px;font-size:12.5px;
+    color:#4b5563;cursor:pointer}
+  .fpill:hover{color:var(--accent)}
+  .fpill.on{background:var(--accent-weak);color:var(--accent);border-color:#c9dbff;font-weight:600}
+  .fb{padding:14px 0;border-bottom:1px solid #f2f3f5;transition:background .5s}
+  .fb.flash{background:#fffdf0;box-shadow:inset 3px 0 0 #f0c36d;border-radius:8px}
+  .fb:last-child{border-bottom:0}
+  .fb-h{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:12.5px;color:var(--muted)}
+  .tag{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:5px;background:#f1f3f6;color:#4b5563}
+  .tag.rule_new{background:#eaf1ff;color:#2f6fed}
+  .tag.rule_wrong{background:#fdeaea;color:#c0392b}
+  .tag.other{background:#f0f1f4;color:#57606a}
+  .st{font-size:11.5px;padding:1px 7px;border-radius:5px;border:1px solid var(--border);color:var(--muted)}
+  .st.pending{background:#fff8ec;border-color:#f0dcb8;color:#8a5a12}
+  .st.done{background:#f2fbf4;border-color:#cfe6d3;color:#22693a}
+  .fb-h .who{color:#39414d}
+  .fb-h .sp{flex:1}
+  .fb-body{font-size:13.5px;line-height:1.75;white-space:pre-wrap;overflow-wrap:anywhere;margin-top:7px}
+  .fb-page{font-size:12.5px;color:var(--muted);margin-top:6px}
+  .fb-page a{color:var(--accent);text-decoration:none}
+  .fb-page a:hover{text-decoration:underline}
+  .fb-reply{margin-top:9px;background:#f7f9ff;border-left:3px solid #bcd2ff;border-radius:0 8px 8px 0;
+    padding:8px 11px;font-size:13px;line-height:1.7;white-space:pre-wrap;overflow-wrap:anywhere}
+  .fb-reply .rt{font-size:12px;color:#5a7bd6;font-weight:600;margin-bottom:3px}
+  .fb-admin{margin-top:9px;display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+  .fb-admin textarea{min-height:64px;font-size:13px}
+  .fb-admin .box{width:100%}
+  .linkbtn{background:none;border:0;color:var(--accent);font-size:12.5px;padding:2px 4px;cursor:pointer}
+  .linkbtn:hover{text-decoration:underline}
+  .linkbtn.danger{color:var(--danger)}
+  .empty{text-align:center;color:#9aa3b2;font-size:13px;padding:36px 0}
+  .pager{display:flex;gap:6px;justify-content:center;align-items:center;margin-top:14px;flex-wrap:wrap}
+  .pager button{min-width:32px;padding:5px 9px;font-size:12.5px}
+  .pager button.on{background:var(--accent-weak);border-color:#bcd2ff;color:var(--accent);font-weight:600}
+  .pager .gap{color:#9aa3b2;font-size:12px}
+  .toast{position:fixed;left:50%;transform:translateX(-50%);bottom:26px;background:#1f2430;color:#fff;
+    font-size:13px;padding:9px 16px;border-radius:9px;opacity:0;pointer-events:none;transition:opacity .18s;z-index:50}
+  .toast.on{opacity:.95}
+  @media(max-width:900px){
+    .layout{grid-template-columns:1fr}
+    .form-panel{position:static}
+    .row2{grid-template-columns:1fr}
+    .wrap{padding:0 12px 60px}
+  }
+</style>
+</head>
+<body>
+{% include "_nav.html" %}
+<div class="wrap">
+  <div class="phead">
+    <h1>问题反馈</h1>
+    <div class="sub">这里反馈的是<b>检查本身</b>：想新增一条检查项，或者某条检查结果判错了（误报 / 漏报）。文档内容本身的质量问题（错别字、表述、内容是否完整）不在本页范围。反馈公开可见，处理结果会公开回复。</div>
+  </div>
+
+  <div class="layout">
+    <!-- 左：提交 -->
+    <section class="panel form-panel">
+      <h2>提一条反馈</h2>
+      {% if not logged_in %}
+      <div class="loginbox">
+        <p>用 GitCode 账号登录后就能提交，这样每条反馈都有署名，也能随时删掉自己提交的内容。</p>
+        <a class="loginbtn" href="/auth/login?next=/feedback">GitCode 登录</a>
+      </div>
+      {% else %}
+      <form id="fb-form" autocomplete="off">
+        <div class="field">
+          <span class="lb">类型</span>
+          <div class="pills" id="fb-kind">
+            <span class="pill on" data-v="rule_new">新增检查项</span>
+            <span class="pill" data-v="rule_wrong">检查结果有误</span>
+            <span class="pill" data-v="other">其它</span>
+          </div>
+        </div>
+        <div class="field" id="fb-page-field" style="display:none">
+          <span class="lb">涉及页面 <span class="hint">报「检查结果有误」时填上更好定位</span></span>
+          <div style="display:flex;gap:6px;align-items:center">
+            <input type="text" id="fb-page" placeholder="cn/capabilities/arkts-xxx">
+            <button type="button" class="linkbtn" id="fb-page-clear">清除</button>
+          </div>
+          <input type="hidden" id="fb-page-title">
+        </div>
+        <div class="field">
+          <span class="lb">内容</span>
+          <textarea id="fb-content" maxlength="2000"
+            placeholder="例如：&#10;· 新增检查项：想加一条「示例代码里调用了已废弃的 API」的检查。&#10;· 检查结果有误：arkts-xxx 那篇报的「链接失效」点开其实能打开，是误报。&#10;· 漏报：这类问题你们没查出来，比如 xxx。"></textarea>
+          <div class="counter" id="fb-counter">0 / 2000</div>
+        </div>
+        <div class="field row2">
+          <div>
+            <span class="lb">称呼 <span class="hint">公开</span></span>
+            <input type="text" id="fb-name" maxlength="30" placeholder="留空即显示登录名" value="{{ me_name }}">
+          </div>
+          <div>
+            <span class="lb">联系方式 <span class="hint">选填，不公开</span></span>
+            <input type="text" id="fb-contact" maxlength="100" placeholder="邮箱 / 工号，便于回访">
+          </div>
+        </div>
+        <input type="text" id="fb-hp" tabindex="-1" autocomplete="off"
+               style="position:absolute;left:-9999px;width:1px;height:1px" aria-hidden="true">
+        <button type="submit" class="primary" id="fb-submit">提交反馈</button>
+        <p class="tips">提交后维护者会收到通知，处理结果会公开回复在这条下面。<br>
+          自己提交的内容随时可以删除（列表里带「我提交的」标记）。<br>
+          只是文档内容写错了？那不在本页范围，等官方文档渠道处理。</p>
+      </form>
+
+      <div class="okbox" id="fb-ok">
+        <h3>提交成功，谢谢！</h3>
+        <p>维护者会收到通知，处理后会在这条反馈下面公开回复。</p>
+        <button type="button" id="fb-again">再提一条</button>
+      </div>
+      {% endif %}
+    </section>
+
+    <!-- 右：列表 -->
+    <section class="panel list-panel">
+      <div class="list-head">
+        <h2>大家的反馈</h2>
+        <span class="sp"></span>
+        <span class="stat">共 <b id="s-all">0</b> 条 · 待处理 <b id="s-pending">0</b></span>
+      </div>
+      <div class="filters">
+        <div class="grp">
+          <span class="glb">状态</span>
+          <span class="fpill on" data-k="status" data-v="all">全部</span>
+          <span class="fpill" data-k="status" data-v="pending">待处理</span>
+          <span class="fpill" data-k="status" data-v="done">已处理</span>
+        </div>
+        <div class="grp">
+          <span class="glb">类型</span>
+          <span class="fpill on" data-k="kind" data-v="all">全部</span>
+          <span class="fpill" data-k="kind" data-v="rule_new">新增检查项 <span class="n"></span></span>
+          <span class="fpill" data-k="kind" data-v="rule_wrong">检查结果有误 <span class="n"></span></span>
+          <span class="fpill" data-k="kind" data-v="other">其它 <span class="n"></span></span>
+        </div>
+      </div>
+      <div id="fb-list"><div class="empty">加载中…</div></div>
+      <div class="pager" id="fb-pager"></div>
+    </section>
+  </div>
+</div>
+<div class="toast" id="fb-toast"></div>
+
+<script>
+const IS_ADMIN = {{ is_admin_user|tojson }};
+const KINDS = {rule_new:'新增检查项', rule_wrong:'检查结果有误', other:'其它'};
+const state = {page:1, size:10, kind:'all', status:'all', total:0, focus:0};
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g,
+  c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmtN = n => (n == null ? '—' : Number(n).toLocaleString('zh-CN'));
+
+function toast(msg, ms) {
+  const t = $('#fb-toast');
+  t.textContent = msg;
+  t.classList.add('on');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => t.classList.remove('on'), ms || 2200);
+}
+
+/* ---------- 表单（未登录时表单不渲染，全部判空） ---------- */
+let kind = 'rule_new';
+const form = $('#fb-form');
+const ta = $('#fb-content');
+
+function setPage(page, title) {
+  if (!$('#fb-page')) return;
+  $('#fb-page').value = page || '';
+  $('#fb-page-title').value = title || '';
+  $('#fb-page-field').style.display = page ? '' : 'none';
+}
+
+if (form) {
+  $('#fb-kind').addEventListener('click', e => {
+    const p = e.target.closest('.pill'); if (!p) return;
+    kind = p.dataset.v;
+    [...$('#fb-kind').children].forEach(x => x.classList.toggle('on', x === p));
+  });
+
+  const syncCounter = () => {
+    const n = ta.value.length;
+    $('#fb-counter').textContent = n + ' / 2000';
+    $('#fb-counter').classList.toggle('over', n > 2000);
+  };
+  ta.addEventListener('input', syncCounter);
+  syncCounter();
+
+  $('#fb-page-clear').addEventListener('click', () => setPage('', ''));
+
+  form.addEventListener('submit', async e => {
+    e.preventDefault();
+    const content = ta.value.trim();
+    if (content.replace(/\s/g, '').length < 5) { toast('内容太短了，至少写 5 个字'); ta.focus(); return; }
+    const btn = $('#fb-submit');
+    btn.disabled = true; btn.textContent = '提交中…';
+    try {
+      const r = await fetch('/api/feedback', {
+        method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          kind, content,
+          page: $('#fb-page').value.trim(),
+          page_title: $('#fb-page-title').value.trim(),
+          name: $('#fb-name').value.trim(),
+          contact: $('#fb-contact').value.trim(),
+          _hp: $('#fb-hp').value
+        })
+      });
+      const d = await r.json().catch(() => ({}));
+      if (r.status === 401 && d.need_login) { toast('登录状态已过期，请刷新页面重新登录'); return; }
+      if (!r.ok || !d.ok) { toast(d.error || '提交失败，请稍后重试'); return; }
+      form.style.display = 'none';
+      $('#fb-ok').style.display = 'block';
+      state.page = 1; state.status = 'all'; state.kind = 'all';
+      [...document.querySelectorAll('.fpill')].forEach(p => p.classList.toggle('on', p.dataset.v === 'all'));
+      loadList();
+    } finally {
+      btn.disabled = false; btn.textContent = '提交反馈';
+    }
+  });
+
+  $('#fb-again').addEventListener('click', () => {
+    ta.value = ''; syncCounter();
+    $('#fb-name').value = ''; $('#fb-contact').value = '';
+    setPage('', '');
+    $('#fb-ok').style.display = 'none';
+    form.style.display = '';
+    ta.focus();
+  });
+}
+
+/* ---------- 列表 ---------- */
+document.querySelectorAll('.fpill').forEach(p => {
+  p.addEventListener('click', () => {
+    const k = p.dataset.k, v = p.dataset.v;
+    state[k] = v; state.page = 1;
+    document.querySelectorAll(`.fpill[data-k="${k}"]`).forEach(x => x.classList.toggle('on', x === p));
+    loadList();
+  });
+});
+
+function pageLink(it) {
+  if (!it.page) return '';
+  const label = esc(it.page_title || it.page);
+  return it.page_link
+    ? `<div class="fb-page">涉及页面：<a href="${esc(it.page_link)}" target="_blank" rel="noopener">${label}</a></div>`
+    : `<div class="fb-page">涉及页面：${esc(it.page)}</div>`;
+}
+
+function itemHtml(it) {
+  const delBtn = it.can_delete
+    ? `<button type="button" class="linkbtn danger" data-act="del" data-id="${it.id}">删除</button>` : '';
+  const adminBox = IS_ADMIN ? `
+    <div class="fb-admin">
+      <button type="button" class="linkbtn" data-act="toggle" data-id="${it.id}"
+        data-status="${it.status}">${it.status === 'done' ? '改回待处理' : '标记已处理'}</button>
+      <button type="button" class="linkbtn" data-act="reply" data-id="${it.id}">${it.reply ? '修改回复' : '回复'}</button>
+      ${delBtn}
+    </div>
+    <div class="box" id="box-${it.id}" style="display:none">
+      <textarea id="ta-${it.id}" placeholder="公开回复（会显示在这条反馈下面）">${esc(it.reply)}</textarea>
+      <div style="display:flex;gap:8px;margin-top:6px">
+        <button type="button" class="primary" data-act="savereply" data-id="${it.id}">保存回复</button>
+        <button type="button" data-act="closereply">取消</button>
+      </div>
+    </div>` : '';
+  return `<article class="fb" id="fb-${it.id}">
+    <div class="fb-h">
+      <span class="tag ${esc(it.kind)}">${esc(it.kind_label)}</span>
+      <span class="who">${esc(it.name || '匿名')}</span>
+      ${it.mine ? '<span class="mine">我提交的</span>' : ''}
+      <span>${esc(it.created_at)}</span>
+      <span class="st ${esc(it.status)}">${esc(it.status_label)}</span>
+      <span class="sp"></span>
+      ${IS_ADMIN ? '' : delBtn}
+    </div>
+    ${pageLink(it)}
+    <div class="fb-body">${esc(it.content)}</div>
+    ${it.reply ? `<div class="fb-reply"><div class="rt">站务回复 · ${esc(it.replied_at)}</div>${esc(it.reply)}</div>` : ''}
+    ${adminBox}
+  </article>`;
+}
+
+async function loadList() {
+  const q = new URLSearchParams({page: state.page, size: state.size,
+                                 kind: state.kind, status: state.status});
+  if (state.focus) q.set('item', state.focus);       // 邮件/分享链接里的「直达某条」
+  let d = {};
+  try { d = await (await fetch('/api/feedback?' + q)).json(); }
+  catch (e) { $('#fb-list').innerHTML = '<div class="empty">加载失败，请刷新重试</div>'; return; }
+  if (!d.ok) { $('#fb-list').innerHTML = '<div class="empty">加载失败，请刷新重试</div>'; return; }
+  state.total = d.total;
+  $('#s-all').textContent = fmtN(d.stats.all);
+  $('#s-pending').textContent = fmtN(d.stats.pending);
+  document.querySelectorAll('.fpill[data-k="kind"]').forEach(p => {
+    const n = p.querySelector('.n');
+    if (!n) return;
+    const c = (d.stats.by_kind || {})[p.dataset.v] || 0;
+    n.textContent = '(' + fmtN(c) + ')';
+    n.style.color = c ? '' : '#9aa3b2';
+  });
+  $('#fb-list').innerHTML = d.items.length
+    ? d.items.map(itemHtml).join('')
+    : '<div class="empty">还没有反馈。第一条就交给你了～</div>';
+  let focus = 0;
+  if (d.focus) { state.page = d.page; focus = d.focus; state.focus = 0; }
+  renderPager(d.total, state.page, d.size);
+  if (focus) {
+    const el = document.getElementById('fb-' + focus);
+    if (el) {
+      el.scrollIntoView({block: 'center'});
+      el.classList.add('flash');
+      setTimeout(() => el.classList.remove('flash'), 2600);
+    }
+  } else if (location.hash && location.hash.startsWith('#fb-')) {
+    const el = document.querySelector(location.hash);
+    if (el) el.scrollIntoView({block: 'center'});
+  }
+}
+
+function renderPager(total, page, size) {
+  const pages = Math.max(1, Math.ceil(total / size));
+  const box = $('#fb-pager');
+  if (pages <= 1) { box.innerHTML = ''; return; }
+  const btn = (p, label, on) =>
+    `<button type="button" data-p="${p}" class="${on ? 'on' : ''}" ${on ? 'disabled' : ''}>${label}</button>`;
+  let h = btn(page - 1, '上一页', page <= 1);
+  const nums = [];
+  for (let p = 1; p <= pages; p++) {
+    if (p === 1 || p === pages || Math.abs(p - page) <= 2) nums.push(p);
+    else if (nums[nums.length - 1] !== '…') nums.push('…');
+  }
+  nums.forEach(p => { h += p === '…' ? '<span class="gap">…</span>' : btn(p, p, p === page); });
+  h += btn(page + 1, '下一页', page >= pages);
+  box.innerHTML = h;
+  box.querySelectorAll('button[data-p]').forEach(b => {
+    b.addEventListener('click', () => {
+      const p = parseInt(b.dataset.p, 10);
+      if (!p || p === state.page) return;
+      state.page = p; loadList();
+      $('.list-panel').scrollIntoView({block: 'start', behaviour: 'smooth'});
+    });
+  });
+}
+
+/* ---------- 删除 / 管理员操作 ---------- */
+document.querySelector('#fb-list').addEventListener('click', async e => {
+  const b = e.target.closest('button[data-act]');
+  if (!b) return;
+  const id = b.dataset.id;
+  const act = b.dataset.act;
+
+  if (act === 'del') {
+    if (!confirm('删除这条反馈？删除后无法恢复。')) return;
+    b.disabled = true;
+    const r = await fetch(`/api/feedback/${id}/delete`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: '{}'
+    });
+    const d = await r.json().catch(() => ({}));
+    b.disabled = false;
+    if (!r.ok || !d.ok) { toast(d.error || '删除失败'); return; }
+    toast('已删除');
+    loadList();
+    return;
+  }
+
+  if (act === 'toggle') {
+    b.disabled = true;
+    const want = b.dataset.status === 'done' ? 'pending' : 'done';
+    const r = await fetch(`/api/feedback/${id}/handle`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({status: want})
+    });
+    const d = await r.json().catch(() => ({}));
+    b.disabled = false;
+    if (!r.ok || !d.ok) { toast(d.error || '操作失败'); return; }
+    toast(want === 'done' ? '已标记为已处理' : '已改回待处理');
+    loadList();
+    return;
+  }
+
+  if (act === 'reply') {
+    const box = document.getElementById('box-' + id);
+    if (box) { box.style.display = box.style.display === 'none' ? '' : 'none'; }
+    return;
+  }
+  if (act === 'closereply') {
+    const box = b.closest('.box'); if (box) box.style.display = 'none';
+    return;
+  }
+  if (act === 'savereply') {
+    const ta2 = document.getElementById('ta-' + id);
+    const text = ta2 ? ta2.value.trim() : '';
+    b.disabled = true;
+    const r = await fetch(`/api/feedback/${id}/handle`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({reply: text, status: 'done'})
+    });
+    const d = await r.json().catch(() => ({}));
+    b.disabled = false;
+    if (!r.ok || !d.ok) { toast(d.error || '操作失败'); return; }
+    toast('回复已保存');
+    loadList();
+  }
+});
+
+/* 从文档站「反馈此页」带过来的参数 */
+(function initFromQuery() {
+  const q = new URLSearchParams(location.search);
+  const page = (q.get('page') || '').trim();
+  const title = (q.get('title') || '').trim();
+  if (page) setPage(page, title);
+  const it = parseInt(q.get('item') || '0', 10);
+  if (it > 0) { state.focus = it; state.kind = 'all'; state.status = 'all'; }
+  /* 从文档页带 page 过来的，多半是报「这一页的检查结果有误」，默认选中它 */
+  const want = (q.get('kind') && KINDS[q.get('kind')]) ? q.get('kind') : (page ? 'rule_wrong' : '');
+  if (want && $('#fb-kind')) {
+    kind = want;
+    [...$('#fb-kind').children].forEach(x => x.classList.toggle('on', x.dataset.v === kind));
+  }
+})();
+
+loadList();
+</script>
+</body>
+</html>

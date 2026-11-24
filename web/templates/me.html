@@ -118,7 +118,7 @@
 
     <div class="card">
       <h2>我关注的问题</h2>
-      <div class="sub">每个关注范围按全量问题的筛选口径统计，范围之间互不影响；邮件里按范围分别列出。最多 20 个。</div>
+      <div class="sub">每个关注范围按已识别问题的筛选口径统计，范围之间互不影响；邮件里按范围分别列出。最多 20 个。</div>
       {% if groups and (groups|selectattr('enabled')|list|length) == 0 %}
       <div class="sub" style="color:#b25b00">所有关注范围都已停用，不会收到日报；打开任意一个即可恢复。</div>
       {% endif %}
@@ -149,7 +149,7 @@
 
     <div class="card">
       <h2>添加关注范围</h2>
-      <div class="sub">关注的都是「未解决」的问题；口径与「全量问题」一致，不选＝全部。可以建多个关注范围，邮件里分别列出。</div>
+      <div class="sub">关注的都是「未解决」的问题；口径与「已识别问题」一致，不选＝全部。可以建多个关注范围，邮件里分别列出。</div>
       <div class="row">
         <span class="flabel">问题类型</span>
         <select id="a-rule"><option value="">全部类型</option></select>

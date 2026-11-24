@@ -130,7 +130,7 @@
 {% if not authed %}
 <div class="login">
   <h1>站点管理</h1>
-  <p>设置检查项开关、中英文生效范围。保存后「全量问题」页会按新配置显示。</p>
+  <p>设置检查项开关、中英文生效范围。保存后「已识别问题」页会按新配置显示。</p>
   <form method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="password" name="password" placeholder="管理口令" autofocus autocomplete="current-password">
@@ -142,7 +142,6 @@
 <div class="wrap">
   <div class="pagehd">
     <h1>站点管理</h1>
-    <span class="rule">检查项开关</span>
     <span class="sp"></span>
     <form method="post" action="/admin/logout" style="margin:0">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><button>退出后台</button></form>
@@ -157,7 +156,7 @@
   <div class="pane" id="pane-rules">
   <div class="card">
     <h2>检查项</h2>
-    <div class="sub">三态：<b>启用</b>＝所有人可见（全量问题、导出、订阅日报）；<b>调试中</b>＝照常检查、数据入库，但只有你能看到，不参与任何对外统计；<b>停用</b>＝不再检查，已有数据保留但不再更新。改动即时保存。</div>
+    <div class="sub">三态：<b>启用</b>＝所有人可见（已识别问题、导出、订阅日报）；<b>调试中</b>＝照常检查、数据入库，但只有你能看到，不参与任何对外统计；<b>停用</b>＝不再检查，已有数据保留但不再更新。改动即时保存。</div>
     <table>
       <thead><tr><th style="width:38%">检查项</th><th style="width:130px">状态</th><th style="width:150px">生效语言</th><th class="n" style="width:90px">未解决</th><th style="width:56px"></th></tr></thead>
       <tbody>
@@ -399,7 +398,7 @@
     <div class="card" style="margin-top:16px">
       <div class="cachehd">
         <h2 style="margin:0">忽略审计</h2>
-        <span class="sum">谁在什么时候忽略了哪条问题（可在全量问题页恢复）</span>
+        <span class="sum">谁在什么时候忽略了哪条问题（可在已识别问题页恢复）</span>
         <span class="sp"></span>
         <input class="uq" id="g-q" placeholder="搜索忽略人 / 文档" autocomplete="off">
       </div>
@@ -460,7 +459,7 @@ document.querySelectorAll('tr[data-rule]:not(.pend)').forEach(tr=>{
     const prev = tr.dataset.state;
     if (e.target.value === 'live' && prev !== 'live') {   // 调试中/停用 → 启用：说清后果
       const n = Number(tr.dataset.n || 0).toLocaleString();
-      if (!confirm(`启用后该检查项当前 ${n} 条未解决问题会立即出现在全量问题、导出文件和订阅日报中。\n\n确定启用？`)) {
+      if (!confirm(`启用后该检查项当前 ${n} 条未解决问题会立即出现在已识别问题、导出文件和订阅日报中。\n\n确定启用？`)) {
         e.target.value = prev; return;
       }
     }

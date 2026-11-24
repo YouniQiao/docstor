@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>全量问题 · 鸿蒙开发者文档</title>
+<title>已识别问题 · 鸿蒙开发者文档</title>
 <style>
   :root{--accent:#2f6fed;--accent-weak:#eaf1ff;--border:#e6e8eb;--muted:#6b7280;--danger:#d94a4a;--warn:#b3761f;--info:#57606a}
   *{box-sizing:border-box}
@@ -89,12 +89,6 @@
     .tag{white-space:normal;line-height:1.35}
     .pager{flex-wrap:wrap}
   }
-  .airow{display:flex;gap:8px;align-items:center;margin-top:8px}
-  .aiout{margin-top:6px;background:#f7f9fc;border:1px solid var(--border);border-radius:8px;
-    padding:9px 11px;font-size:12.5px;color:#39414d;line-height:1.75;white-space:pre-wrap;word-break:break-word}
-  .aiout .aihdr{color:var(--muted);font-size:11.5px;margin-bottom:4px;white-space:normal}
-  .aiout .aicode{margin-top:6px;background:#eef2f7;border-radius:6px;padding:6px 8px;font-family:ui-monospace,Menlo,monospace;
-    font-size:12px;white-space:pre-wrap;word-break:break-word}
   .imask{position:fixed;inset:0;background:rgba(16,24,40,.38);display:flex;align-items:center;
     justify-content:center;z-index:120;padding:16px}
   .imask[hidden]{display:none}
@@ -141,11 +135,11 @@
     <span class="pvtag {{ preview.state }}">
       {{ '调试中 · 不对外' if preview.state == 'debug' else ('启用' if preview.state == 'live' else '停用') }}</span>
     <b>检查项预览 · {{ preview.label }}</b>
-    <span class="meta">{% if preview.state == 'live' %}已启用：问题会出现在全量问题、导出文件和订阅日报中{% elif preview.state == 'debug' %}调试中：只在这里可见，不进对外页面、导出和订阅日报{% else %}停用：不再检查，已有数据保留{% endif %}</span>
+    <span class="meta">{% if preview.state == 'live' %}已启用：问题会出现在已识别问题、导出文件和订阅日报中{% elif preview.state == 'debug' %}调试中：只在这里可见，不进对外页面、导出和订阅日报{% else %}停用：不再检查，已有数据保留{% endif %}</span>
     <span style="flex:1"></span>
     {% if preview.run %}<span class="meta">上次手动运行 {{ preview.run.started_at }}{% if preview.run.running %} · 运行中…{% endif %}</span>{% endif %}
-    <button id="pv-run" {{ 'disabled title="检查项已停用，先到「检查项开关」启用"' if preview.state == 'off' }}>只跑这条规则</button>
-    <a class="pvback" href="/admin">← 检查项开关</a>
+    <button id="pv-run" {{ 'disabled title="检查项已停用，先到「站点管理」启用"' if preview.state == 'off' }}>只跑这条规则</button>
+    <a class="pvback" href="/admin">← 站点管理</a>
   </div>
   {% endif %}
   <div class="cards" id="cards"></div>
@@ -157,7 +151,6 @@
       <span style="flex:1"></span>
       <span class="meta" id="count"></span>
       <span class="meta" id="last-sync" style="font-size:12px"></span>
-      <button id="f-subscribe" title="按这套筛选去「个人中心 → 我关注的问题」新建一个关注范围">关注这组筛选</button>
       <button id="f-export" title="按当前筛选导出全部问题（不分页）">导出 Excel</button>
     </div>
     <div class="frow">
@@ -257,46 +250,6 @@ function opCell(it){
 
 const ITEMS = {};   // 本页的问题，按 id 存一份，确认框里用来显示「忽略的是哪一条」
 
-/* ── AI 整改建议（点开才调用，结果按问题指纹缓存） ── */
-function aiRow(it){
-  if (it.status === 'resolved') return '';
-  if (!ME.user && !IS_ADMIN) return '';          // 未登录不给按钮，避免匿名烧 token
-  return `<div class="airow"><button class="mini2" data-ai="${it.id}">AI 建议</button>
-    <span class="meta" id="aist-${it.id}"></span></div>
-    <div class="aiout" id="aiout-${it.id}" hidden></div>`;
-}
-async function loadAdvice(id, btn){
-  const box = document.getElementById('aiout-' + id);
-  const st = document.getElementById('aist-' + id);
-  if (!box) return;
-  if (!box.hidden){ box.hidden = true; return; }
-  if (box.dataset.done){ box.hidden = false; return; }
-  if (btn) btn.disabled = true;
-  if (st) st.textContent = '生成中…';
-  try {
-    const r = await fetch(`/api/issues/${id}/suggest`, {method: 'POST'});
-    let d = {};
-    try { d = await r.json(); } catch(e){}
-    if (!r.ok){
-      if (st) st.textContent = '';
-      if (d.need_login){ alert('请先用 GitCode 登录'); location.href = '/auth/login'; return; }
-      alert(d.error || '生成失败'); return;
-    }
-    const conf = d.confidence != null ? Math.round(d.confidence * 100) + '%' : '—';
-    box.innerHTML = `<div class="aihdr">AI 建议 · 置信度 ${conf}`
-      + (d.needs_human ? ' · 建议人工确认' : '') + (d.cached ? ' · 缓存结果' : '')
-      + ' · 仅供参考，请以官网与规范为准</div>'
-      + esc(d.advice || '')
-      + (d.snippet ? `<div class="aicode">${esc(d.snippet)}</div>` : '');
-    box.dataset.done = '1';
-    box.hidden = false;
-    if (st) st.textContent = '';
-  } catch(e){
-    if (st) st.textContent = '';
-    alert('生成失败：' + e.message);
-  } finally { if (btn) btn.disabled = false; }
-}
-
 /* ── 忽略：先选/写一个理由，再提交 ── */
 let IGNORING = null;
 function openIgnore(id){
@@ -362,8 +315,6 @@ async function issueAct(kind, id){
 }
 
 document.getElementById('list').addEventListener('click', e => {
-  const ai = e.target.closest('button[data-ai]');
-  if (ai){ if (!ai.disabled) loadAdvice(ai.dataset.ai, ai); return; }
   const b = e.target.closest('button[data-act]');
   if (!b || b.disabled) return;
   b.disabled = true;
@@ -514,14 +465,6 @@ async function loadFacets(){
   }
 
 // 当前筛选写回地址栏：链接可直接分享，刷新/回退都停在同一视图
-// 把这套筛选条件带到个人中心，作为一条订阅
-function subThisFilter(){
-  const p = new URLSearchParams(query());
-  p.delete('page'); p.delete('size');
-  location.href = '/me/subscribe?' + p.toString();
-}
-document.getElementById('f-subscribe').addEventListener('click', subThisFilter);
-
 function syncUrl(){
   const p = new URLSearchParams(query());
   if (p.get('page') === '1') p.delete('page');
@@ -572,7 +515,7 @@ async function loadList(){
         return `<tr>
           <td class="type" data-l="类型"><span class="tag" title="${esc(it.rule_label)}">${esc(it.rule_label)}</span></td>
           <td class="msg" data-l="问题">${msgOf(it)}${extraOf(it, lang, section)}${it.status === 'ignored'
-              ? `<div class="meta">已忽略：${esc(it.ignored_by || '—')} · ${esc((it.ignored_at || '').slice(0, 16))}${it.ignore_reason ? ' · 理由：' + esc(it.ignore_reason) : ''}</div>` : ''}${aiRow(it)}</td>
+              ? `<div class="meta">已忽略：${esc(it.ignored_by || '—')} · ${esc((it.ignored_at || '').slice(0, 16))}${it.ignore_reason ? ' · 理由：' + esc(it.ignore_reason) : ''}</div>` : ''}</td>
           <td class="doc" data-l="镜像文档"><a href="/#/${lang}/${section}/${slug}${frag}" target="_blank" rel="noopener"
                  title="${esc(lang + '/' + section + '/' + slug)}">链接</a></td>
           <td class="off" data-l="官网文档">${it.official_url
@@ -696,8 +639,6 @@ function applyQuery(){
 }
 
 if (PREVIEW) {
-  const sub = document.getElementById('f-subscribe');   // 调试中的规则不能订阅，避免建出空关注范围
-  if (sub) sub.style.display = 'none';
   const b = document.getElementById('pv-run');
   if (b) b.onclick = async () => {
     b.disabled = true;
@@ -739,7 +680,7 @@ loadMe().then(loadFacets)
       <button type="button" class="mini2" id="imcancel">取消</button>
       <button type="button" class="mini2 primary" id="imok">确定忽略</button>
     </div>
-    <div class="inote">忽略后不再出现在全量问题、导出和订阅日报里，可在「问题状态 = 已忽略」里恢复。</div>
+    <div class="inote">忽略后不再出现在已识别问题、导出和订阅日报里，可在「问题状态 = 已忽略」里恢复。</div>
   </div>
 </div>
 </body>

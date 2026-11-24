@@ -1,5 +1,5 @@
-{# 统一顶栏：文档站 / 全量问题 / 每日变更记录 + 右侧用户区
-   三个页面共用，当前页由 request.path 高亮，用户态走 /api/me。 #}
+{# 统一顶栏：开发者文档 / 已识别问题 / 每日变更记录 / 关于（站点动态、问题反馈）+ 右侧用户区
+   各页面共用，当前页由 request.path 高亮，用户态走 /api/me。 #}
 <meta name="csrf-token" content="{{ csrf_token() }}">
 <script>
 /* 同站 fetch 写请求自动带一次性令牌：别的站点、外部脚本拿不到这个令牌，调用一律被拒 */
@@ -27,49 +27,96 @@
   header.tnav .brand{font-size:15px;font-weight:700;color:#1f2430;text-decoration:none;letter-spacing:.2px}
   header.tnav .brand:hover{color:#2a6df4}
   header.tnav .tabs{display:flex;align-items:stretch;height:100%;gap:2px}
-  header.tnav .tabs a{display:flex;align-items:center;padding:0 12px;font-size:13.5px;color:#687083;
+  header.tnav .tabs>a,
+  header.tnav .about>a{display:flex;align-items:center;padding:0 12px;font-size:13.5px;color:#687083;
     text-decoration:none;border-bottom:2px solid transparent;margin-bottom:-1px;white-space:nowrap}
-  header.tnav .tabs a:hover{color:#2a6df4}
-  header.tnav .tabs a.on{color:#2a6df4;font-weight:600;border-bottom-color:#2a6df4}
+  header.tnav .tabs>a:hover,
+  header.tnav .about>a:hover{color:#2a6df4}
+  header.tnav .tabs>a.on,
+  header.tnav .about>a.on{color:#2a6df4;font-weight:600;border-bottom-color:#2a6df4}
+  header.tnav .about{position:relative;display:flex;align-items:stretch;height:100%}
+  header.tnav .about .car{font-size:8px;margin-left:4px;color:#9aa3b2;transform:translateY(-1px)}
+  header.tnav .about.open>a{color:#2a6df4}
+  header.tnav .about .menu{position:absolute;left:0;top:100%;margin-top:-1px;background:#fff;
+    border:1px solid #e4e7ec;border-radius:10px;box-shadow:0 8px 24px rgba(20,30,60,.10);
+    min-width:132px;padding:6px;display:none;z-index:30}
+  header.tnav .about.open .menu{display:block}
+  header.tnav .about .menu a{display:block;padding:8px 10px;border-radius:7px;font-size:13.5px;
+    color:#1f2430;text-decoration:none;white-space:nowrap;border:0;margin:0}
+  header.tnav .about .menu a:hover{background:#f5f7fb;color:#2a6df4}
+  header.tnav .about .menu a.on{background:#f5f7fb;color:#2a6df4;font-weight:600}
   header.tnav .sp{flex:1}
   header.tnav .usr{position:relative;display:flex;align-items:center;gap:8px;font-size:13px}
   header.tnav .usr>a{display:flex;align-items:center;gap:5px;color:#39414d;text-decoration:none;
     padding:6px 10px;border-radius:8px;max-width:170px}
   header.tnav .usr>a:hover{background:#f5f7fb;color:#2a6df4}
   header.tnav .usr .nm{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  header.tnav .menu{position:absolute;right:0;top:100%;margin-top:4px;background:#fff;
+  header.tnav .usr .menu{position:absolute;right:0;top:100%;margin-top:4px;background:#fff;
     border:1px solid #e4e7ec;border-radius:10px;box-shadow:0 8px 24px rgba(20,30,60,.10);
-    min-width:136px;padding:6px;display:none}
-  header.tnav .menu.on{display:block}
-  header.tnav .menu a{display:block;padding:8px 10px;border-radius:7px;font-size:13px;
+    min-width:136px;padding:6px;display:none;z-index:30}
+  header.tnav .usr .menu.on{display:block}
+  header.tnav .usr .menu a{display:block;padding:8px 10px;border-radius:7px;font-size:13px;
     color:#1f2430;text-decoration:none}
-  header.tnav .menu a:hover{background:#f5f7fb;color:#2a6df4}
+  header.tnav .usr .menu a:hover{background:#f5f7fb;color:#2a6df4}
   @media(max-width:760px){
     header.tnav{padding:0 10px;gap:8px;height:50px}
     header.tnav .brand{display:none}
     header.tnav .tabs{overflow-x:auto;scrollbar-width:none}
     header.tnav .tabs::-webkit-scrollbar{display:none}
-    header.tnav .tabs a{padding:0 9px;font-size:13px}
+    header.tnav .tabs>a,header.tnav .about>a{padding:0 9px;font-size:13px}
     header.tnav .usr>a{padding:6px 8px}
   }
   @media(max-width:430px){
-    /* 四个页签在小屏要挤进一行，不然「站点动态」会滑到屏外 */
     header.tnav{padding:0 6px;gap:4px}
-    header.tnav .tabs a{padding:0 6px;font-size:12.5px}
+    header.tnav .tabs{gap:0}
+    header.tnav .tabs>a,header.tnav .about>a{padding:0 5px;font-size:12px}
+    /* 小屏「关于」贴着右侧，子菜单改成右对齐，避免超出屏幕 */
+    header.tnav .about .menu{left:auto;right:0}
   }
 </style>
+{% set about_here = request.path in ('/changelog', '/feedback') %}
 <header class="tnav">
   <a class="brand" href="/">docstor</a>
   <!-- 用 div 而不是 <nav>：docsify 会给页面里的 <nav> 自动加 .app-nav 并右对齐，导航项会被挤到右边 -->
   <div class="tabs">
-    <a href="/" class="{{ 'on' if request.path == '/' else '' }}">文档站</a>
-    <a href="/issues" class="{{ 'on' if request.path == '/issues' else '' }}">全量问题</a>
+    <a href="/" class="{{ 'on' if request.path == '/' else '' }}">开发者文档</a>
+    <a href="/issues" class="{{ 'on' if request.path == '/issues' else '' }}">已识别问题</a>
     <a href="/sync" class="{{ 'on' if request.path == '/sync' else '' }}">每日变更记录</a>
-    <a href="/changelog" class="{{ 'on' if request.path == '/changelog' else '' }}">站点动态</a>
+    <div class="about" id="tnav-about">
+      <a href="/changelog" class="{{ 'on' if about_here else '' }}" aria-haspopup="true">关于<span class="car">▼</span></a>
+      <div class="menu">
+        <a href="/changelog" class="{{ 'on' if request.path == '/changelog' else '' }}">站点动态</a>
+        <a href="/feedback" class="{{ 'on' if request.path == '/feedback' else '' }}">问题反馈</a>
+      </div>
+    </div>
   </div>
   <span class="sp"></span>
   <div class="usr" id="tnav-usr"></div>
 </header>
+<script>
+/* 「关于」下拉：桌面悬停即开、点一下也能开；触屏点开、点别处或 Esc 关 */
+(function () {
+  var box = document.getElementById('tnav-about');
+  if (!box) return;
+  var link = box.querySelector('a');
+  var timer = null;
+  function open(on) { box.classList.toggle('open', on); }
+  var hoverOK = window.matchMedia('(hover:hover)').matches;
+  box.addEventListener('mouseenter', function () {
+    if (hoverOK) { clearTimeout(timer); open(true); }
+  });
+  box.addEventListener('mouseleave', function () {
+    if (hoverOK) { timer = setTimeout(function () { open(false); }, 140); }
+  });
+  link.addEventListener('click', function (e) {
+    /* 点「关于」只开合子菜单，不跳转；要进站点动态点子菜单里那一项 */
+    e.preventDefault();
+    open(!box.classList.contains('open'));
+  });
+  document.addEventListener('click', function (e) { if (!box.contains(e.target)) open(false); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') open(false); });
+})();
+</script>
 <script>
 (async () => {
   const box = document.getElementById('tnav-usr');

@@ -174,9 +174,14 @@
   function openLi(li) {
     var sub = li.querySelector(':scope > ul');
     if (li._kids && sub && (!li.dataset.built || sub.childElementCount !== li._kids.filter(kidVisible).length)) {
-      sub.innerHTML = '';                       // 先清空，保证幂等（避免重复挂载）
-      li._kids.filter(kidVisible).forEach(function (k) { sub.appendChild(makeNode(k, li._sec)); });
+      var sb = document.querySelector('.sidebar');
+      var y = sb ? sb.scrollTop : 0;            // 兜底：万一还有瞬时塌陷
+      var frag = document.createDocumentFragment();
+      li._kids.filter(kidVisible).forEach(function (k) { frag.appendChild(makeNode(k, li._sec)); });
+      if (sub.replaceChildren) sub.replaceChildren(frag);
+      else { sub.innerHTML = ''; sub.appendChild(frag); }
       li.dataset.built = '1';
+      if (sb && Math.abs(sb.scrollTop - y) > 1) sb.scrollTop = y;
     }
     li.classList.add('open');
     if (li.dataset.key) state.expanded[li.dataset.key] = 1;
@@ -188,7 +193,8 @@
     // docsify 每次换页可能重建 .sidebar-nav，不能只信 dataset 标记
     if (nav.dataset.dsRendered === state.treeLang && nav.querySelector('.ds-tree')) return;
 
-    nav.innerHTML = '';
+    // 注意：不能先 nav.innerHTML='' 再逐个 append——中间那一刻侧栏高度是 0，
+    // 浏览器会立刻把 .sidebar 的 scrollTop 掐成 0（用户反馈的「展开就回到顶部」就是这个）。
     var ul = document.createElement('ul');
     ul.className = 'ds-tree';
 
@@ -236,7 +242,8 @@
       ul.appendChild(li);
     });
 
-    nav.appendChild(ul);
+    if (nav.replaceChildren) nav.replaceChildren(ul);
+    else { nav.innerHTML = ''; nav.appendChild(ul); }
     nav.dataset.dsRendered = state.treeLang;
     restoreExpanded();
   }
@@ -265,7 +272,10 @@
     return null;
   }
 
+  var revealScrolled = false;         // revealPath 是否主动把当前页带进可视区（是的话就别再还原旧位置）
+
   function revealPath() {
+    revealScrolled = false;
     if (!state.tree || !state.section || !state.slug) return;
     var sec = null;
     (state.tree.sections || []).forEach(function (s) { if (s.k === state.section) sec = s; });
@@ -299,6 +309,65 @@
     }
   }
 
+  // 侧栏滚动位置「钉住」：换页时 docsify/浏览器会把 scrollTop 冲回 0，
+  // 而这不是通过 JS 赋值做的（拦截不到），只能每帧盯一会儿把它按回去。
+  var sbPin = {el: null, y: 0, until: 0, raf: 0, touched: false};
+  (function () {
+    function mark() { sbPin.touched = true; }
+    // pointerdown 发生在跳转之前：趁这一刻记住用户看到的侧栏位置（后面 scrollTop 会被冲掉）
+    ['pointerdown', 'mousedown'].forEach(function (t) {
+      document.addEventListener(t, function (e) {
+        var sb = document.querySelector('.sidebar');
+        if (sb && e.target && e.target.closest && e.target.closest('.sidebar')) state.sbY = sb.scrollTop;
+      }, {passive: true, capture: true});
+    });
+    ['wheel', 'touchmove', 'keydown'].forEach(function (t) {
+      document.addEventListener(t, function (e) {
+        if (e.target && e.target.closest && e.target.closest('.sidebar')) mark();
+      }, {passive: true, capture: true});
+    });
+    // 用户自己滚侧栏时持续记录位置（钉住期间不记，免得把被冲掉的 0 当成用户意图）
+    document.addEventListener('scroll', function (e) {
+      var t = e.target;
+      if (!t || !t.classList || !t.classList.contains('sidebar') || sbPin.raf) return;
+      state.sbY = t.scrollTop;
+    }, {passive: true, capture: true});
+  })();
+
+  function pinSidebarScroll(sb, y, ms) {
+    if (!sb) return;
+    sbPin.el = sb; sbPin.y = y; sbPin.touched = false;
+    sbPin.until = (window.performance ? performance.now() : Date.now()) + (ms || 700);
+    if (sbPin.raf) return;
+    (function tick() {
+      sbPin.raf = 0;
+      var now = window.performance ? performance.now() : Date.now();
+      var el = sbPin.el;
+      if (el && el.isConnected && !sbPin.touched && Math.abs(el.scrollTop - sbPin.y) > 1) {
+        el.scrollTop = sbPin.y;
+      }
+      if (now < sbPin.until) sbPin.raf = requestAnimationFrame(tick);
+    })();
+  }
+
+  // 当前页这条在可视区外时才把它带到中间；在可视区里就什么都不做
+  function activeInView(sb) {
+    var a = document.querySelector('.sidebar-nav a.active');
+    if (!a || !sb) return true;
+    var r = a.getBoundingClientRect(), br = sb.getBoundingClientRect();
+    return r.top >= br.top + 30 && r.bottom <= br.bottom - 30;
+  }
+
+  function ensureActiveVisible() {
+    var a = document.querySelector('.sidebar-nav a.active');
+    var sb = document.querySelector('.sidebar');
+    if (!a || !sb || activeInView(sb)) return;
+    var r = a.getBoundingClientRect(), br = sb.getBoundingClientRect();
+    sb.scrollTop += r.top - br.top - sb.clientHeight / 2;
+    sbPin.y = sb.scrollTop;
+    revealScrolled = true;
+  }
+
   function updateBrand() {
     var h1 = document.querySelector('.sidebar > h1, .sidebar .app-name');
     if (h1) h1.textContent = state.lang === 'en' ? 'HarmonyOS Developers' : '鸿蒙开发者';
@@ -319,9 +388,21 @@
   function sidebarNow() {
     updateBrand();
     if (!state.tree) return;
+    var sb = document.querySelector('.sidebar');
+    // docsify 换页时会先清空 .sidebar-nav，那一瞬间高度归零、scrollTop 被浏览器掐成 0，
+    // 等我们跑过来读就晚了。所以用 beforeEach 里提前存下的位置兜底（取两者较大值）。
+    var y = Math.max(sb ? sb.scrollTop : 0, state.sbY || 0);
     state.chainKeys = computeChainKeys();
-    renderSidebar();
-    revealPath();
+    renderSidebar();               // 换页时 docsify 会清空 .sidebar-nav，这里整树重建
+    revealPath();                  // 沿途展开会把子树重建一遍（新树从收起开始，高度会缩一下）
+    // 重建过程中 scrollTop 会被冲掉（而且不是 JS 赋的，拦不住），所以先还位再钉住；
+    // 只有「当前页那一条不在可视区里」时才不钉，改成把它带进视野。
+    if (sb && y > 0 && sb.scrollTop !== y) sb.scrollTop = y;
+    if (sb && activeInView(sb)) {
+      pinSidebarScroll(sb, y, 800);
+    } else {
+      requestAnimationFrame(function () { ensureActiveVisible(); pinSidebarScroll(sb, sbPin.y, 800); });
+    }
   }
 
   /* ---------- 锚点：把官方 anchorId 挂到对应标题上 ---------- */
@@ -720,6 +801,12 @@
         renderUpdated();
         if (document.querySelector('.ds-panel.open')) loadIssues();
       });
+    });
+    // 换页渲染前先记下侧栏位置（docsify 清空 .sidebar-nav 会把它冲掉）
+    hook.beforeEach(function () {
+      var sb = document.querySelector('.sidebar');
+      if (sb) state.sbY = sb.scrollTop;
+      // 注意：不要 return 任何值——docsify 会拿返回值替换正文 markdown，返回 '' 会把整页变 404
     });
     hook.mounted(function () { buildPanel(); buildResizer(); buildToc(); });
   };

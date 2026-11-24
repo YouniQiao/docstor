@@ -215,7 +215,7 @@ def build_html(user_name: str, groups: list[dict], changes: dict, day: str,
       这封邮件每天早上 8:00 发送 · 数据来自开发者文档中心镜像检查<br>
       <a href="{SITE}/me/subscribe" style="color:#9aa3b2">调整关注范围</a> ·
       <a href="{unsub}" style="color:#9aa3b2">不再接收（一键退订）</a> ·
-      <a href="{SITE}/issues" style="color:#9aa3b2">打开全量问题</a>
+      <a href="{SITE}/issues" style="color:#9aa3b2">打开已识别问题</a>
     </div>
   </td></tr>
 </table>
