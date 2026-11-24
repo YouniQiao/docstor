@@ -211,6 +211,33 @@ REDUP_OK = set("""
 """.split())
 
 
+# 本身带叠字的固定说法/专业词：整词命中就不算重复字。
+# 「端端同步」是分布式数据的正式说法（设备间的端端同步），不是「端」多打了一个。
+DUP_TERMS = ("端端同步",)
+
+
+def _term_spans(ctx: str):
+    spans = []
+    for t in DUP_TERMS:
+        i = ctx.find(t)
+        while i >= 0:
+            spans.append((i, i + len(t)))
+            i = ctx.find(t, i + 1)
+    return spans
+
+
+def in_dup_term(hit: dict) -> bool:
+    """重复片段落在某个带叠字的固定说法里 → 不是重复录入。"""
+    ctx = hit.get("context") or ""
+    i = hit.get("idx", -1)
+    if not ctx or i < 0:
+        return False
+    for a, b in _term_spans(ctx):
+        if a <= i and i + 2 <= b:
+            return True
+    return False
+
+
 def iter_corpus(text: str):
     """产出 (来源, 行号, 文本)。来源 = prose（正文） / comment（代码注释）。"""
     for line_no, t in prose_lines(text):
@@ -282,6 +309,8 @@ def find_dup_candidates(text: str, skip_ok: bool = True, skip_boundary: bool = T
                    "idx": col - (len(line) - len(line.lstrip())),
                    "pattern": pat, "context": s[:160]}
             if skip_boundary and is_boundary(hit):
+                continue
+            if skip_ok and in_dup_term(hit):
                 continue
             hits.append(hit)
     return hits
